@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from hydra import compose, initialize_config_dir
+from hydra.errors import ConfigCompositionException
 
 import q2jepa.config  # noqa: F401  registers schema
 
@@ -32,5 +33,5 @@ def test_group_switches():
 
 
 def test_typo_rejected():
-    with pytest.raises(Exception):
+    with pytest.raises(ConfigCompositionException):
         _cfg(["trainer.itters=5"])
