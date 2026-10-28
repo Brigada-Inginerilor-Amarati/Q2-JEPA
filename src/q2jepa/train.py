@@ -118,6 +118,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
 
     for module, _ in groups.values():
         module.requires_grad_(False)
+    _seed(cfg.seed, READOUT_SEED_OFFSET)  # readout init must not depend on whether the loop above ran
     readout = TranslationReadout(cfg.encoder.d).to(device)
     readout_path = out_dir / "readout.pt"
     if readout_path.exists():

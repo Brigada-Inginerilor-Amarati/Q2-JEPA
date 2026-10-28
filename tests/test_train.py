@@ -39,3 +39,11 @@ def test_interrupted_run_resumes_to_same_metrics(tmp_path):
     assert run(part, tmp_path / "res") == {} and (tmp_path / "res" / "ckpt.pt").exists()
     assert not (tmp_path / "res" / "metrics.json").exists()
     assert run(full, tmp_path / "res") == ref
+
+
+def test_resume_during_readout_matches_uninterrupted(tmp_path):
+    cfg = _cfg(["trainer.ckpt_every=2"])
+    ref = run(cfg, tmp_path / "r")
+    (tmp_path / "r" / "readout.pt").unlink()  # session died after world model, before readout finished
+    (tmp_path / "r" / "metrics.json").unlink()
+    assert run(cfg, tmp_path / "r") == ref
