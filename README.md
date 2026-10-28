@@ -42,7 +42,30 @@ uv run python scripts/bench_attention.py --target qpp-cpu --res 16 --res 32 --im
 
 ### Google Colab GPU Workflow
 
-Use [`notebooks/colab_gpu.ipynb`](notebooks/colab_gpu.ipynb) (backed by [`scripts/colab_setup.py`](scripts/colab_setup.py)) to install the matching CUDA 12/13 `cuda-quantum` wheel on Colab GPU runtimes, run tests and benchmarks on the `nvidia` target, and checkpoint training runs to Google Drive.
+Use [`notebooks/colab_gpu.ipynb`](notebooks/colab_gpu.ipynb) (backed by [`scripts/colab_setup.py`](scripts/colab_setup.py)) in the Colab web UI or from the terminal via [`google-colab-cli`](https://pypi.org/project/google-colab-cli/) (`colab`) to install the matching CUDA 12/13 `cuda-quantum` wheel on Colab GPU runtimes, run tests and benchmarks on the `nvidia` target, and checkpoint training runs to Google Drive.
+
+#### Running via the `colab` CLI
+
+```bash
+# 1. Install the CLI and verify authentication
+uv tool install google-colab-cli
+colab whoami
+
+# 2. Provision a named GPU session (T4, L4, or A100)
+colab new -s q2jepa --gpu T4
+
+# 3a. Mount Google Drive interactively (persists checkpoints to Drive)
+colab drivemount -s q2jepa
+
+# 3b. Or, for headless/agent runs without interactive Drive OAuth, create a local fallback directory
+echo 'import os; os.makedirs("/content/drive/MyDrive", exist_ok=True)' | colab exec -s q2jepa
+
+# 4. Execute the full notebook (writes cell outputs to notebooks/colab_gpu_output.ipynb)
+colab exec -s q2jepa --timeout 600 -f notebooks/colab_gpu.ipynb
+
+# 5. Always release the VM when finished
+colab stop -s q2jepa
+```
 
 ### Development & Hooks
 
