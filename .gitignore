@@ -15,3 +15,6 @@ __pycache__/
 # MacOS
 Icon?
 .DS_Store
+
+# Colab CLI output
+notebooks/*_output.ipynb
