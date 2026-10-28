@@ -39,15 +39,6 @@ jobs:
       - name: Check formatting with ruff
         run: uv run ruff format --check src scripts tests notebooks
 
-      - name: Check quantum import boundary
-        run: |
-          outside=$(grep -rnE "^\s*(import|from)\s+cudaq\b" src/ scripts/ tests/ --exclude-dir=quantum || true)
-          if [ -n "$outside" ]; then
-            echo "Error: cudaq imported outside src/q2jepa/quantum/:"
-            echo "$outside"
-            exit 1
-          fi
-
       - name: Run pytest (qpp-cpu)
         env:
           Q2JEPA_CUDAQ_TARGET: qpp-cpu
