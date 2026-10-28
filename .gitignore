@@ -1,0 +1,10 @@
+data/
+outputs/
+multirun/
+wandb/
+.venv/
+__pycache__/
+.DS_Store
+.remember/
+.superpowers/
+.venv312/
