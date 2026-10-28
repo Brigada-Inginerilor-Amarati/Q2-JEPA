@@ -47,7 +47,7 @@ This document covers **the tech stack and how the repo starts out**. It is not a
 
 | Concern | Choice | Who decided |
 |---|---|---|
-| Language | Python **3.14 for local dev** (`.python-version` = 3.14), **floor 3.12** (`requires-python = ">=3.12"`) because Colab runs 3.12 | team |
+| Language | Python **3.12** across local dev and Colab (`.python-version` = 3.12, `requires-python = ">=3.12"`) | team |
 | Env & deps | `uv` + `pyproject.toml` + `uv.lock` locally. On Colab, `pip install -e .` into the preinstalled environment. Dependency floors stay loose (e.g. torch) so Colab's preinstalled packages satisfy them. | team (loose torch) / me |
 | Quantum SDK pin | CUDA-Q 0.16.0 via the concrete wheel `cuda-quantum-cu13==0.16.0`, which has wheels for macOS arm64 and Linux. The `cudaq` package on PyPI is a source package whose dependency is chosen when it is built on each machine, which breaks uv's cross-platform lock, and `cudaq` 0.16.0.post1 has no macOS wheel. On a GPU with a CUDA-12 driver, swap in `cuda-quantum-cu12==0.16.0` (same API). | team (0.16.x) / me (wheel) |
 | GPU runtime | **Google Colab** GPU runtimes, driven by a thin notebook (`notebooks/colab_gpu.ipynb`) that installs this package and calls into it. No code lives in the notebook. | team |

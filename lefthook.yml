@@ -1,0 +1,16 @@
+pre-commit:
+  piped: true
+  commands:
+    ruff-check:
+      priority: 1
+      glob: "*.{py,ipynb}"
+      run: uv run ruff check --fix {staged_files}
+      stage_fixed: true
+    ruff-format:
+      priority: 2
+      glob: "*.{py,ipynb}"
+      run: uv run ruff format {staged_files}
+      stage_fixed: true
+    pytest:
+      priority: 3
+      run: uv run pytest

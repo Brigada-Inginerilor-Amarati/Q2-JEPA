@@ -21,7 +21,9 @@ def test_param_count():
 def test_full_equals_factored_random_image():
     x, tq, tk = _setup(1, np.random.default_rng(0).random((16, 16)))
     w = _weights(x)
-    np.testing.assert_allclose(full_swap_test_probs(x, tq, tk), 0.5 * (np.outer(w, w) + factored_acm(x, tq, tk)), atol=1e-6)
+    np.testing.assert_allclose(
+        full_swap_test_probs(x, tq, tk), 0.5 * (np.outer(w, w) + factored_acm(x, tq, tk)), atol=1e-6
+    )
 
 
 def test_empty_patches_no_nan():
