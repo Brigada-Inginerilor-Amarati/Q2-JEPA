@@ -8,4 +8,7 @@ __pycache__/
 .remember/
 .superpowers/
 .venv312/
+
+# MacOS
 Icon?
+.DS_Store
