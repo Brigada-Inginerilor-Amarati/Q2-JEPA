@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint & Test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Cache MNIST dataset
+        uses: actions/cache@v4
+        with:
+          path: data/MNIST
+          key: mnist-v1
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Lint with ruff
+        run: uv run ruff check src scripts tests notebooks
+
+      - name: Check formatting with ruff
+        run: uv run ruff format --check src scripts tests notebooks
+
+      - name: Check quantum import boundary
+        run: |
+          outside=$(grep -rnE "^\s*(import|from)\s+cudaq\b" src/ scripts/ tests/ --exclude-dir=quantum || true)
+          if [ -n "$outside" ]; then
+            echo "Error: cudaq imported outside src/q2jepa/quantum/:"
+            echo "$outside"
+            exit 1
+          fi
+
+      - name: Run pytest (qpp-cpu)
+        env:
+          Q2JEPA_CUDAQ_TARGET: qpp-cpu
+          WANDB_MODE: disabled
+        run: uv run pytest

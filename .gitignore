@@ -1,10 +1,14 @@
+# Outputs
 data/
 outputs/
 multirun/
 wandb/
+
+# Python
 .venv/
 __pycache__/
-.DS_Store
+
+# AI
 .remember/
 .superpowers/
 
