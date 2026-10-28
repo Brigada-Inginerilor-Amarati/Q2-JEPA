@@ -85,9 +85,10 @@ def factored_acm(patches: np.ndarray, theta_q: np.ndarray, theta_k: np.ndarray, 
 
 def full_swap_test_probs(patches: np.ndarray, theta_q: np.ndarray, theta_k: np.ndarray, depth: int = 2) -> np.ndarray:
     """Pr(i, j, anc=0) from the full swap-test circuit (HQViT Eq. 21)."""
-    psi = (patches.reshape(-1) / _whole_image_norm(patches)).astype(complex)
+    dtype = np.complex64 if cudaq.get_target().get_precision() == cudaq.SimulationPrecision.fp32 else np.complex128
+    psi = (patches.reshape(-1) / _whole_image_norm(patches)).astype(dtype)
     t, d = patches.shape
-    init = cudaq.State.from_data(np.concatenate([np.kron(psi, psi), np.zeros(psi.size**2, dtype=complex)]))
+    init = cudaq.State.from_data(np.concatenate([np.kron(psi, psi), np.zeros(psi.size**2, dtype=dtype)]))
     theta_q_l, theta_k_l = np.asarray(theta_q, float).tolist(), np.asarray(theta_k, float).tolist()
     state = cudaq.get_state(_full, init, int(np.log2(t * d)), int(np.log2(d)), theta_q_l, theta_k_l, depth)
     probs = (np.abs(np.array(state)) ** 2).reshape(2, t, d, t, d)  # (anc, iK, lK, iQ, lQ)
