@@ -1,16 +1,16 @@
 # Outputs
-data/
-outputs/
-multirun/
-wandb/
+/data/
+/outputs/
+/multirun/
+/wandb/
 
 # Python
 .venv/
 __pycache__/
 
 # AI
-.remember/
-.superpowers/
+/.remember/
+/.superpowers/
 
 # MacOS
 Icon?
