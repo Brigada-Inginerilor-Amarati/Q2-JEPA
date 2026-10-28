@@ -10,3 +10,4 @@ __pycache__/
 
 # MacOS
 Icon?
+.DS_Store
