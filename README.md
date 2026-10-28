@@ -2,8 +2,8 @@
 
 **Q²-JEPA** is a dual-quantum visual world model that predicts multimodal plausible futures from short video clips, simulated on GPUs with **NVIDIA CUDA-Q**:
 
-1. **HQViT Encoder** ([Zhang et al., arXiv:2504.02730](docs/hqvit.pdf)) — whole-image amplitude encoding and swap-test quantum self-attention (factored 4-qubit training mode and full 17/21-qubit swap-test benchmark mode).
-2. **Conditional Born-Machine Prior** ([Liu et al., Q-JEPA, arXiv:2610.27921](docs/qjepa.pdf)) — an entangled Quantum Circuit Born Machine (QCBM) that samples binary latent action codes $z$ so a shared predictor produces diverse future representations.
+1. **HQViT Encoder** ([Zhang et al., arXiv:2504.02730](docs/papers/hqvit.pdf)) — whole-image amplitude encoding and swap-test quantum self-attention (factored 4-qubit training mode and full 17/21-qubit swap-test benchmark mode).
+2. **Conditional Born-Machine Prior** ([Liu et al., Q-JEPA, arXiv:2610.27921](docs/papers/qjepa.pdf)) — an entangled Quantum Circuit Born Machine (QCBM) that samples binary latent action codes $z$ so a shared predictor produces diverse future representations.
 
 ## Setup
 
