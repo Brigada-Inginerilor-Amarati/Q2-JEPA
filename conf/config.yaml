@@ -1,0 +1,8 @@
+defaults:
+  - base_config
+  - encoder: cnn
+  - prior: softmax_categorical
+  - dataset: mmnist
+  - quantum: cpu
+  - trainer: default
+  - _self_
