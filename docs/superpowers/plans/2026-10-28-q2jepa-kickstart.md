@@ -57,6 +57,7 @@ Edit `pyproject.toml` so that `requires-python = ">=3.12"`, and add `[tool.pytes
 import cudaq
 from q2jepa.quantum import set_target
 
+
 def test_cudaq_target_selected():
     set_target("qpp-cpu")
     assert cudaq.get_target().name == "qpp-cpu"
@@ -106,25 +107,36 @@ import q2jepa.config  # noqa: F401  registers schema
 
 CONF = str(Path(__file__).resolve().parents[1] / "conf")
 
+
 def _cfg(overrides=()):
     with initialize_config_dir(config_dir=CONF, version_base="1.3"):
         return compose("config", overrides=list(overrides))
+
 
 def test_table5_defaults():
     c = _cfg()
     assert (c.encoder.d, c.predictor.width, c.prior.hidden, c.prior.n_bits, c.prior.layers) == (64, 96, 48, 3, 2)
     t = c.trainer
     assert (t.iters, t.batch, t.k_train, t.warmup_repr, t.warmup_pred) == (4000, 64, 32, 200, 300)
-    assert (t.lr_enc, t.lr_enc_later, t.lr_pred, t.lr_prior, t.weight_decay, t.clip) == (3e-4, 1e-5, 1e-3, 1e-3, 1e-5, 5.0)
+    assert (t.lr_enc, t.lr_enc_later, t.lr_pred, t.lr_prior, t.weight_decay, t.clip) == (
+        3e-4,
+        1e-5,
+        1e-3,
+        1e-3,
+        1e-5,
+        5.0,
+    )
     assert t.lambda_reg == pytest.approx(4 / 3)
     assert (c.visreg.n_proj, c.visreg.w_center, c.visreg.w_scale, c.visreg.shape_ramp) == (128, 1.0, 10.0, 100)
     assert (c.quantum.shots, c.quantum.readout_flip, c.quantum.shift_obs, c.quantum.shift_coords) == (256, 0.005, 8, 9)
     assert (c.readout.iters, c.readout.batch, c.readout.lr, c.readout.weight_decay) == (4000, 64, 2e-3, 0.01)
     assert (c.eval.n_obs, c.eval.k_eval) == (80, 128)
 
+
 def test_group_switches():
     assert _cfg(["quantum=gpu"]).quantum.target == "nvidia"
     assert _cfg(["prior=mixture"]).prior.name == "mixture"
+
 
 def test_typo_rejected():
     with pytest.raises(Exception):
@@ -158,28 +170,43 @@ def test_typo_rejected():
 import numpy as np
 from q2jepa.quantum.born import MMNIST_CNOT_LAYERS, born_probs, sample_codes, apply_readout_flips
 
+
 def _np_born(angles, layers):
-    n = angles.shape[1]; psi = np.zeros(2**n); psi[0] = 1.0
+    n = angles.shape[1]
+    psi = np.zeros(2**n)
+    psi[0] = 1.0
+
     def ry(psi, j, a):
-        c, s = np.cos(a / 2), np.sin(a / 2); out = psi.copy()
+        c, s = np.cos(a / 2), np.sin(a / 2)
+        out = psi.copy()
         for i in range(2**n):
             if not (i >> j) & 1:
-                k = i | (1 << j); out[i] = c * psi[i] - s * psi[k]; out[k] = s * psi[i] + c * psi[k]
+                k = i | (1 << j)
+                out[i] = c * psi[i] - s * psi[k]
+                out[k] = s * psi[i] + c * psi[k]
         return out
+
     def cx(psi, ctl, tgt):
         out = psi.copy()
         for i in range(2**n):
-            if (i >> ctl) & 1: out[i] = psi[i ^ (1 << tgt)]
+            if (i >> ctl) & 1:
+                out[i] = psi[i ^ (1 << tgt)]
         return out
+
     for l, pairs in enumerate(layers):
-        for j in range(n): psi = ry(psi, j, angles[l, j])
-        for c, t in pairs: psi = cx(psi, c, t)
-    for j in range(n): psi = ry(psi, j, angles[-1, j])
+        for j in range(n):
+            psi = ry(psi, j, angles[l, j])
+        for c, t in pairs:
+            psi = cx(psi, c, t)
+    for j in range(n):
+        psi = ry(psi, j, angles[-1, j])
     return psi**2
+
 
 def test_entangled_matches_reference():
     a = np.random.default_rng(0).uniform(-np.pi, np.pi, (3, 3))
     np.testing.assert_allclose(born_probs(a, MMNIST_CNOT_LAYERS), _np_born(a, MMNIST_CNOT_LAYERS), atol=1e-6)
+
 
 def test_product_marginals():
     a = np.random.default_rng(1).uniform(-np.pi, np.pi, (3, 3))
@@ -187,21 +214,27 @@ def test_product_marginals():
     marg = [p[[i for i in range(8) if (i >> j) & 1]].sum() for j in range(3)]
     np.testing.assert_allclose(marg, np.sin(a.sum(0) / 2) ** 2, atol=1e-6)
 
+
 def test_bit_order_qubit0_is_z0():
-    a = np.zeros((3, 3)); a[-1, 0] = np.pi
+    a = np.zeros((3, 3))
+    a[-1, 0] = np.pi
     z = sample_codes(a[None], MMNIST_CNOT_LAYERS, 64, np.random.default_rng(0))
     assert z.shape == (1, 64, 3) and (z[0] == [1, 0, 0]).all()
 
+
 def test_sample_frequencies_match_probs():
-    rng = np.random.default_rng(2); a = rng.uniform(-np.pi, np.pi, (2, 3, 3))
+    rng = np.random.default_rng(2)
+    a = rng.uniform(-np.pi, np.pi, (2, 3, 3))
     z = sample_codes(a, MMNIST_CNOT_LAYERS, 20000, rng)
     for b in range(2):
         idx = (z[b] * [1, 2, 4]).sum(-1)
         freq = np.bincount(idx, minlength=8) / 20000
         assert 0.5 * np.abs(freq - born_probs(a[b], MMNIST_CNOT_LAYERS)).sum() < 0.02
 
+
 def test_readout_flips():
-    rng = np.random.default_rng(0); bits = rng.integers(0, 2, (4, 1000, 3)).astype(np.uint8)
+    rng = np.random.default_rng(0)
+    bits = rng.integers(0, 2, (4, 1000, 3)).astype(np.uint8)
     assert (apply_readout_flips(bits, 0.0, rng) == bits).all()
     assert (apply_readout_flips(bits, 1.0, rng) == 1 - bits).all()
     assert abs((apply_readout_flips(bits, 0.005, rng) != bits).mean() - 0.005) < 0.002
@@ -231,8 +264,8 @@ def test_readout_flips():
 
 ```python
 P = np.abs(state) ** 2
-P = P.reshape(2, T, d, T, d)       # (anc, iK, lK, iQ, lQ) under little-endian indexing
-pr = P[0].sum(axis=(1, 3)).T       # -> [iQ, jK]
+P = P.reshape(2, T, d, T, d)  # (anc, iK, lK, iQ, lQ) under little-endian indexing
+pr = P[0].sum(axis=(1, 3)).T  # -> [iQ, jK]
 ```
 
 - [ ] **Step 1: Write the failing tests**
@@ -241,21 +274,29 @@ pr = P[0].sum(axis=(1, 3)).T       # -> [iQ, jK]
 import numpy as np, pytest
 from q2jepa.quantum.attention import image_to_patches, n_ansatz_params, factored_acm, full_swap_test_probs
 
+
 def _setup(seed, img):
-    rng = np.random.default_rng(seed); k = n_ansatz_params(4, 2)
+    rng = np.random.default_rng(seed)
+    k = n_ansatz_params(4, 2)
     return image_to_patches(img, 4), rng.uniform(-np.pi, np.pi, k), rng.uniform(-np.pi, np.pi, k)
+
 
 def test_param_count():
     assert n_ansatz_params(4, 2) == 28
+
 
 def test_full_equals_factored_random_image():
     img = np.random.default_rng(0).random((16, 16))
     x, tq, tk = _setup(1, img)
     w = (np.linalg.norm(x, axis=1) ** 2) / (np.linalg.norm(x) ** 2)
-    np.testing.assert_allclose(full_swap_test_probs(x, tq, tk), 0.5 * (np.outer(w, w) + factored_acm(x, tq, tk)), atol=1e-6)
+    np.testing.assert_allclose(
+        full_swap_test_probs(x, tq, tk), 0.5 * (np.outer(w, w) + factored_acm(x, tq, tk)), atol=1e-6
+    )
+
 
 def test_empty_patches_no_nan():
-    img = np.zeros((16, 16)); img[5:11, 6:10] = np.random.default_rng(2).random((6, 4))
+    img = np.zeros((16, 16))
+    img[5:11, 6:10] = np.random.default_rng(2).random((6, 4))
     x, tq, tk = _setup(3, img)
     f = factored_acm(x, tq, tk)
     assert np.isfinite(f).all()
@@ -263,6 +304,7 @@ def test_empty_patches_no_nan():
     assert empty.sum() >= 8 and (f[empty] == 0).all() and (f[:, empty] == 0).all()
     w = (np.linalg.norm(x, axis=1) ** 2) / (np.linalg.norm(x) ** 2)
     np.testing.assert_allclose(full_swap_test_probs(x, tq, tk), 0.5 * (np.outer(w, w) + f), atol=1e-6)
+
 
 def test_black_image_raises():
     x, tq, tk = _setup(0, np.zeros((16, 16)))
@@ -298,17 +340,21 @@ def test_black_image_raises():
 import numpy as np, torch
 from q2jepa.data.mmnist import DIRECTION_PROBS, true_trajectories, translate, StochasticMovingMNIST
 
+
 def test_probs_and_trajectories():
     assert np.isclose(DIRECTION_PROBS.sum(), 1.0)
     t = true_trajectories()
     np.testing.assert_allclose(t[0, 2], [12, 0], atol=1e-9)
     np.testing.assert_allclose(t[2, 0], [0, 4], atol=1e-9)
 
+
 def test_translate_moves_centroid():
-    img = torch.zeros(64, 64); img[30, 20] = 1.0
+    img = torch.zeros(64, 64)
+    img[30, 20] = 1.0
     out = translate(img, torch.tensor([3.0, -2.5]))
-    ys, xs = torch.meshgrid(torch.arange(64.), torch.arange(64.), indexing="ij")
+    ys, xs = torch.meshgrid(torch.arange(64.0), torch.arange(64.0), indexing="ij")
     assert abs((out * xs).sum() / out.sum() - 23.0) < 0.05 and abs((out * ys).sum() / out.sum() - 27.5) < 0.05
+
 
 def test_train_records_and_render_convention():
     ds = StochasticMovingMNIST("train", n_obs=2)
@@ -319,6 +365,7 @@ def test_train_records_and_render_convention():
     expected = translate(item["obs"][2], torch.tensor([4.0, 0.0]))
     assert torch.allclose(item["fut"][0], expected, atol=1e-5)
     assert item["obs"].min() >= 0 and item["obs"].max() <= 1
+
 
 def test_eval_split_and_disjointness():
     te = StochasticMovingMNIST("test", n_obs=3)
@@ -356,15 +403,18 @@ from q2jepa.encoder import prepare
 from q2jepa.encoder.cnn import CNNEncoder
 from q2jepa.predictor import Predictor
 
+
 def test_encoder_shapes_all_res():
     x = torch.rand(5, 3, 64, 64)
     for r in (16, 32, 64):
         assert CNNEncoder(r)(prepare(x, r)).shape == (5, 64)
     assert torch.equal(prepare(x, 64), x)
 
+
 def test_predictor_shape_and_code_dependence():
-    p = Predictor(); h = torch.randn(4, 64)
-    z = torch.tensor([[0., 0, 0], [1, 0, 0]]).expand(4, 2, 3)
+    p = Predictor()
+    h = torch.randn(4, 64)
+    z = torch.tensor([[0.0, 0, 0], [1, 0, 0]]).expand(4, 2, 3)
     out = p(h, z)
     assert out.shape == (4, 2, 64) and not torch.allclose(out[:, 0], out[:, 1])
 ```
@@ -397,21 +447,28 @@ import torch
 from q2jepa.prior.codes import index_to_bits, bits_to_index
 from q2jepa.prior.classical import SoftmaxCategorical, MixturePrior
 
+
 def test_bit_order_matches_cudaq():
     assert index_to_bits(torch.tensor([1, 6]), 3).tolist() == [[1, 0, 0], [0, 1, 1]]
-    assert bits_to_index(torch.tensor([[1., 0, 0], [0, 1, 1]])).tolist() == [1, 6]
+    assert bits_to_index(torch.tensor([[1.0, 0, 0], [0, 1, 1]])).tolist() == [1, 6]
+
 
 def test_mixture_param_count_matches_paper():
     assert sum(p.numel() for p in MixturePrior().parameters()) == 3640
 
+
 def test_categorical_forced_code():
-    p = SoftmaxCategorical(); torch.nn.init.zeros_(p.net[-1].weight)
-    with torch.no_grad(): p.net[-1].bias.copy_(torch.tensor([-50., 50, -50, -50, -50, -50, -50, -50]))
+    p = SoftmaxCategorical()
+    torch.nn.init.zeros_(p.net[-1].weight)
+    with torch.no_grad():
+        p.net[-1].bias.copy_(torch.tensor([-50.0, 50, -50, -50, -50, -50, -50, -50]))
     z = p.sample(torch.randn(2, 64), 16)
-    assert (z == torch.tensor([1., 0, 0])).all()
+    assert (z == torch.tensor([1.0, 0, 0])).all()
+
 
 def test_log_probs_normalize():
-    h = torch.randn(3, 64); allz = index_to_bits(torch.arange(8), 3).expand(3, 8, 3)
+    h = torch.randn(3, 64)
+    allz = index_to_bits(torch.arange(8), 3).expand(3, 8, 3)
     for prior in (SoftmaxCategorical(), MixturePrior()):
         assert torch.allclose(prior.log_prob(h, allz).exp().sum(-1), torch.ones(3), atol=1e-5)
 ```
@@ -446,17 +503,20 @@ import math, torch
 from q2jepa.config import VISRegCfg
 from q2jepa.losses import energy_score, loo_cost, visreg_terms, visreg, prior_score_loss
 
+
 def test_energy_score_known_values():
     t = torch.zeros(1, 4)
     assert energy_score(t[:, None].expand(1, 3, 4), t).item() == 0.0
-    pred = torch.tensor([[[2., 0, 0, 0], [0, 2, 0, 0]]])
+    pred = torch.tensor([[[2.0, 0, 0, 0], [0, 2, 0, 0]]])
     # fidelity = 1, diversity = 0.5*sqrt(8)/2 = sqrt(2)/2
     assert math.isclose(energy_score(pred, t).item(), 1 - math.sqrt(2) / 2, rel_tol=1e-6)
 
+
 def test_loo_cost_shape_and_value():
-    pred = torch.tensor([[[2., 0, 0, 0], [0, 2, 0, 0]]])
+    pred = torch.tensor([[[2.0, 0, 0, 0], [0, 2, 0, 0]]])
     c = loo_cost(pred, torch.zeros(1, 4))
     assert c.shape == (1, 2) and torch.allclose(c, torch.full((1, 2), 1 - math.sqrt(2)))
+
 
 def test_visreg_gaussian_vs_collapsed():
     torch.manual_seed(0)
@@ -465,14 +525,19 @@ def test_visreg_gaussian_vs_collapsed():
     _, s0, _ = visreg_terms(torch.ones(64, 64))
     assert math.isclose(s0.item(), 1.0, rel_tol=1e-5)
 
+
 def test_shape_ramp():
-    v = torch.randn(64, 64); cfg = VISRegCfg()
-    torch.manual_seed(1); a = visreg(v, cfg, 0)
+    v = torch.randn(64, 64)
+    cfg = VISRegCfg()
+    torch.manual_seed(1)
+    a = visreg(v, cfg, 0)
     c, s, _ = visreg_terms(v)
     assert torch.isclose(a, 1.0 * c + 10.0 * s, atol=1e-6)
 
+
 def test_prior_score_loss_detaches_cost():
-    lp = torch.zeros(2, 3, requires_grad=True); cost = torch.ones(2, 3, requires_grad=True)
+    lp = torch.zeros(2, 3, requires_grad=True)
+    cost = torch.ones(2, 3, requires_grad=True)
     prior_score_loss(lp, cost).backward()
     assert cost.grad is None and torch.allclose(lp.grad, torch.full((2, 3), 1 / 6))
 ```
@@ -506,19 +571,24 @@ from q2jepa.data.mmnist import true_trajectories
 from q2jepa.readout.mmnist import TranslationReadout, render
 from q2jepa.metrics import mmnist_metrics
 
+
 def test_zero_init_identity_and_bound():
-    r = TranslationReadout(); d = r(torch.randn(2, 64), torch.randn(2, 64))
+    r = TranslationReadout()
+    d = r(torch.randn(2, 64), torch.randn(2, 64))
     assert torch.equal(d, torch.zeros(2, 3, 2))
     last = torch.rand(2, 64, 64)
     assert torch.allclose(render(last, d), last[:, None].expand(2, 3, 64, 64), atol=1e-6)
-    with torch.no_grad(): r.net[-1].bias.fill_(1e6)
+    with torch.no_grad():
+        r.net[-1].bias.fill_(1e6)
     assert r(torch.randn(1, 64), torch.randn(1, 64)).abs().max() <= 18.0
+
 
 def test_metrics_perfect_distribution():
     t = true_trajectories()
-    samples = np.concatenate([np.repeat(t[k:k+1], 3 if k % 2 == 0 else 2, 0) for k in range(8)])
+    samples = np.concatenate([np.repeat(t[k : k + 1], 3 if k % 2 == 0 else 2, 0) for k in range(8)])
     m = mmnist_metrics(samples)
     assert m["validity"] == 1.0 and m["coverage"] == 1.0 and abs(m["tv"]) < 1e-9 and abs(m["min_ade"]) < 1e-9
+
 
 def test_metrics_single_mode_and_invalid():
     t = true_trajectories()
@@ -573,20 +643,35 @@ import q2jepa.config  # noqa: F401
 from q2jepa.train import stage, run
 
 CONF = str(Path(__file__).resolve().parents[1] / "conf")
-TINY = ["trainer.iters=6", "trainer.warmup_repr=2", "trainer.warmup_pred=4", "trainer.batch=8", "trainer.k_train=4",
-        "readout.iters=2", "readout.batch=8", "eval.n_obs=2", "eval.k_eval=8",
-        "dataset.n_train=2", "dataset.n_test=2", "wandb.mode=disabled"]
+TINY = [
+    "trainer.iters=6",
+    "trainer.warmup_repr=2",
+    "trainer.warmup_pred=4",
+    "trainer.batch=8",
+    "trainer.k_train=4",
+    "readout.iters=2",
+    "readout.batch=8",
+    "eval.n_obs=2",
+    "eval.k_eval=8",
+    "dataset.n_train=2",
+    "dataset.n_test=2",
+    "wandb.mode=disabled",
+]
+
 
 def test_stage_boundaries():
     assert [stage(i, 200, 300) for i in (1, 200, 201, 300, 301)] == ["repr", "repr", "pred", "pred", "full"]
 
+
 def test_smoke_and_reproducible(tmp_path):
     with initialize_config_dir(config_dir=CONF, version_base="1.3"):
         cfg = compose("config", overrides=TINY)
-    m1 = run(cfg, tmp_path / "a"); m2 = run(cfg, tmp_path / "b")
+    m1 = run(cfg, tmp_path / "a")
+    m2 = run(cfg, tmp_path / "b")
     assert set(m1) >= {"coverage", "validity", "tv", "min_ade", "es"}
     assert (tmp_path / "a" / "metrics.json").read_text() == (tmp_path / "b" / "metrics.json").read_text()
     assert json.loads((tmp_path / "a" / "metrics.json").read_text()) == m1
+
 
 def test_interrupted_run_resumes_to_same_metrics(tmp_path):
     with initialize_config_dir(config_dir=CONF, version_base="1.3"):
@@ -627,6 +712,7 @@ Expected `metrics.json`: `validity ≥ 0.85`, `coverage ≥ 0.80`, `tv ≤ 0.25`
 ```python
 from scripts.bench_attention import run_bench
 
+
 def test_bench_rows():
     rows = run_bench("qpp-cpu", 16, 1)
     assert {r["mode"] for r in rows} == {"factored", "full"}
@@ -644,6 +730,7 @@ def test_bench_rows():
 ```python
 import pytest
 from scripts.colab_setup import cuda_major, cudaq_wheel
+
 
 def test_parse_and_pick():
     hdr = "| NVIDIA-SMI 550.54.15   Driver Version: 550.54.15   CUDA Version: 12.4     |"
