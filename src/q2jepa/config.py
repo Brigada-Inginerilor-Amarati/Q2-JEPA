@@ -49,7 +49,9 @@ class TrainerCfg:
     weight_decay: float = 1e-5
     clip: float = 5.0
     lambda_reg: float = 4 / 3
-    device: str = "auto"
+    device: str = "auto"  # cuda if available, else cpu
+    ckpt_every: int = 500
+    stop_after: int = 0  # end this session after N world-model iterations (Colab chunking); 0 = run to the end
 
 
 @dataclass
