@@ -5,6 +5,8 @@
 1. **HQViT Encoder** ([Zhang et al., arXiv:2504.02730](docs/papers/hqvit.pdf)) — whole-image amplitude encoding and swap-test quantum self-attention (factored 4-qubit training mode and full 17/21-qubit swap-test benchmark mode).
 2. **Conditional Born-Machine Prior** ([Liu et al., Q-JEPA, arXiv:2610.27921](docs/papers/qjepa.pdf)) — an entangled Quantum Circuit Born Machine (QCBM) that samples binary latent action codes $z$ so a shared predictor produces diverse future representations.
 
+> **Status:** the classical pipeline (CNN encoder, Softmax-Categorical/Mixture priors) and the CUDA-Q kernels (`quantum/attention.py`, `quantum/born.py`) are built. The HQViT encoder and QCBM prior are **planned** and not yet wired into training — see [`AGENTS.md`](AGENTS.md#2-current-state-vs-target).
+
 ## Setup
 
 Requires Python 3.12 (pinned in `.python-version`) and [`uv`](https://docs.astral.sh/uv/).
@@ -18,7 +20,7 @@ lefthook install
 
 ### Train & Evaluate (3-Stage JEPA + Readout)
 
-Runs are configured with Hydra (`conf/config.yaml`) and support deterministic checkpointing and resume (`checkpoint_dir`):
+Runs are configured with Hydra (`conf/config.yaml`) and support deterministic checkpointing and resume (rerun with the same `hydra.run.dir`):
 
 ```bash
 # Default classical baseline (CNN encoder @ 16x16, Softmax-Categorical prior, CPU target)
@@ -28,8 +30,8 @@ uv run python -m q2jepa.train
 uv run python -m q2jepa.train encoder.res=64 seed=0
 uv run python -m q2jepa.train encoder.res=64 prior=mixture seed=0
 
-# GPU simulation with checkpointing
-uv run python -m q2jepa.train quantum=gpu trainer.device=cuda checkpoint_dir=outputs/ckpt
+# GPU simulation; rerun the same command to resume from outputs/gpu-run/ckpt.pt
+uv run python -m q2jepa.train quantum=gpu trainer.device=cuda hydra.run.dir=outputs/gpu-run
 ```
 
 ### Swap-Test Attention Benchmark
@@ -86,8 +88,8 @@ Q2-JEPA/
 ├── src/q2jepa/
 │   ├── config.py             # Dataclass config schemas registered in Hydra ConfigStore
 │   ├── quantum/              # CUDA-Q kernels: swap-test attention & conditional Born machine
-│   ├── encoder/              # Visual encoders (CNN baseline, HQViT)
-│   ├── prior/                # Latent action priors (Softmax-Categorical, Mixture, QCBM)
+│   ├── encoder/              # Visual encoders (CNN baseline; HQViT planned)
+│   ├── prior/                # Latent action priors (Softmax-Categorical, Mixture; QCBM planned)
 │   ├── predictor.py          # Latent predictor P_psi(h, z)
 │   ├── losses.py             # Leave-one-out energy score, prior score loss, VISReg
 │   ├── data/                 # Stochastic single-digit MovingMNIST generator
@@ -102,6 +104,6 @@ Q2-JEPA/
 
 ## Documentation & Results
 
-- **Architecture & Pitch**: [`docs/papers/Q2_JEPA_Architecture_Slide.pdf`](docs/Q2_JEPA_Architecture_Slide.pdf) · [`docs/papers/HQViT x Q-JEPA.pdf`](docs/HQViT%20x%20Q-JEPA.pdf)
+- **Architecture & Pitch**: [`docs/papers/Q2_JEPA_Architecture_Slide.pdf`](docs/papers/Q2_JEPA_Architecture_Slide.pdf) · [`docs/papers/HQViT x Q-JEPA.pdf`](docs/papers/HQViT%20x%20Q-JEPA.pdf)
 - **Design Spec**: [`docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md`](docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md)
 - **Classical MovingMNIST Baselines**: [`docs/results/2026-10-kickstart-classical.md`](docs/results/2026-10-kickstart-classical.md)
