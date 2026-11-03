@@ -25,5 +25,7 @@ def build_encoder(cfg) -> nn.Module:
     if cfg.name == "cnn":
         return CNNEncoder(cfg.res, cfg.d)
     if cfg.name == "vit":
-        return ViTEncoder(cfg.res, cfg.d, cfg.patch, cfg.depth, cfg.ffn_hidden, cfg.pool, cfg.pos_emb)
+        return ViTEncoder(
+            cfg.res, cfg.d, cfg.patch, cfg.depth, cfg.ffn_hidden, cfg.pool, cfg.pos_emb, tokens=cfg.tokens
+        )
     raise ValueError(f"unknown encoder {cfg.name!r}")

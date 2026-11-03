@@ -1,6 +1,9 @@
 """Classical twin of HQViT: same patching, block stack, pooling and temporal fusion; only attention differs.
 
-Each frame is encoded separately (HQViT amplitude-encodes one image per circuit) and fused after pooling.
+tokens="frame": each frame is encoded separately and fused after pooling (HQViT paper: one image per circuit).
+tokens="spacetime": the patches of all frames form one token set, so attention compares patches across frames
+(HQViT: the index register runs over (frame, patch)); a sinusoidal frame embedding marks time, and tokens are
+still mean-pooled per frame before the shared fusion head.
 Patch layout matches quantum/attention.py: patch i row-major over the grid, pixel l row-major in the patch.
 
 With pool="mean" and pos_emb="none" the encoder is invariant to permuting patches, exactly like HQViT's
@@ -27,6 +30,13 @@ def sincos_2d(grid: int, dim: int) -> torch.Tensor:
         return torch.cat([a.sin(), a.cos()], 1)
 
     return torch.cat([enc(rows), enc(cols)], 1)
+
+
+def sincos_1d(n: int, dim: int) -> torch.Tensor:
+    """Fixed 1-D sinusoidal embedding (n, dim)."""
+    omega = 1.0 / 10000 ** (torch.arange(dim // 2) / (dim // 2))
+    a = torch.arange(n).reshape(-1, 1).float() * omega
+    return torch.cat([a.sin(), a.cos()], 1)
 
 
 def to_patches(x: torch.Tensor, p: int) -> torch.Tensor:
@@ -65,14 +75,20 @@ class ViTEncoder(nn.Module):
         pool: str = "mean",
         pos_emb: str = "none",
         frames: int = 3,
+        tokens: str = "frame",
     ):
         super().__init__()
         if pool not in ("mean", "flatten"):
             raise ValueError(f"unknown pool {pool!r}")
         if res % patch:
             raise ValueError(f"res {res} is not a multiple of patch {patch}")
-        self.patch, self.pool = patch, pool
+        if tokens not in ("frame", "spacetime"):
+            raise ValueError(f"unknown tokens {tokens!r}")
+        if tokens == "spacetime" and pool != "mean":
+            raise ValueError("tokens=spacetime supports pool=mean only")
+        self.patch, self.pool, self.spacetime, self.frames = patch, pool, tokens == "spacetime", frames
         tokens, dim = (res // patch) ** 2, patch * patch
+        self.register_buffer("time", sincos_1d(frames, dim)[:, None] if self.spacetime else None)
         if pos_emb == "sincos":
             self.register_buffer("pos", sincos_2d(res // patch, dim))
         elif pos_emb == "learned":
@@ -90,10 +106,17 @@ class ViTEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b = x.shape[0]
-        t = to_patches(x, self.patch).flatten(0, 1)  # (B*frames, T, dim)
+        t = to_patches(x, self.patch)  # (B, frames, T, dim)
         if self.pos is not None:
             t = t + self.pos
+        if self.spacetime:
+            t = (t + self.time).flatten(1, 2)  # (B, frames*T, dim): attention across frames
+        else:
+            t = t.flatten(0, 1)  # (B*frames, T, dim)
         for block in self.blocks:
             t = block(t)
-        t = t.mean(1) if self.pool == "mean" else t.flatten(1)
+        if self.spacetime:
+            t = t.reshape(b, self.frames, -1, t.shape[-1]).mean(2)  # per-frame mean keeps frame order
+        else:
+            t = t.mean(1) if self.pool == "mean" else t.flatten(1)
         return self.head(t.reshape(b, -1))

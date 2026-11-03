@@ -48,6 +48,7 @@ def test_group_switches():
     )
     assert _cfg().encoder.input_norm == "none"
     assert _cfg(["+experiment=phase2"]).encoder.input_norm == "l2"
+    assert _cfg(["+experiment=phase2"]).encoder.input_scale == 0.144
     assert (_cfg(["+experiment=phase2"]).encoder.res, _cfg(["+experiment=phase2", "encoder=vit"]).encoder.res) == (
         64,
         64,

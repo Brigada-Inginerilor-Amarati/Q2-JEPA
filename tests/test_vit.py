@@ -71,8 +71,32 @@ def test_sincos_is_fixed_and_distinct_per_token():
     assert torch.cdist(enc.pos, enc.pos).add(torch.eye(64)).min() > 0  # every patch position is distinguishable
 
 
+def test_spacetime_tokens_attend_across_frames_and_keep_time_order():
+    torch.manual_seed(0)
+    enc = ViTEncoder(16, pos_emb="sincos", tokens="spacetime").eval()
+    x = torch.rand(2, 3, 16, 16)
+    assert enc(x).shape == (2, 64)
+    assert not torch.allclose(enc(x.flip(1)), enc(x))  # frame order matters
+    y = x.clone()
+    y[:, 0] = torch.rand(2, 16, 16)  # change frame 0 only: frame-2 tokens see it through attention
+    frame_only = ViTEncoder(16, pos_emb="sincos").eval()
+    with torch.no_grad():
+
+        def per_frame(e, v):
+            t = to_patches(v, 4) + e.pos
+            t = (t + e.time).flatten(1, 2) if e.spacetime else t.flatten(0, 1)
+            for blk in e.blocks:
+                t = blk(t)
+            return t.reshape(2, 3, -1, 16)[:, 2]
+
+        assert not torch.allclose(per_frame(enc, y), per_frame(enc, x))
+        assert torch.allclose(per_frame(frame_only, y), per_frame(frame_only, x))
+
+
 def test_build_vit():
     from types import SimpleNamespace
 
-    cfg = SimpleNamespace(name="vit", res=16, d=64, patch=4, depth=3, ffn_hidden=0, pool="mean", pos_emb="none")
+    cfg = SimpleNamespace(
+        name="vit", res=16, d=64, patch=4, depth=3, ffn_hidden=0, pool="mean", pos_emb="none", tokens="frame"
+    )
     assert isinstance(build_encoder(cfg), ViTEncoder)

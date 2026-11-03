@@ -4,3 +4,6 @@
 encoder:
   res: 64
   input_norm: l2
+  # Normalized frames keep the raw frames' mean L2 norm (9.24 on MovingMNIST train at 64x64 = 0.144 * 64);
+  # unit RMS (scale 1) cut CNN dev coverage from 96.7 to 77.2 under the paper's learning rates.
+  input_scale: 0.144
