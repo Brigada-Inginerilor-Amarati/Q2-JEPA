@@ -32,15 +32,15 @@ The README describes the target. What actually exists today:
 | Classical ViT twin of HQViT (`encoder/vit.py`, `encoder=vit`) | done; defaults 8×8 patches + sinusoidal positions; learning rate under test (phase-2 spec §5.3) |
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
-| Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | kernels only, not wired into an encoder |
-| HQViT encoder (`encoder/hqvit.py`, `conf/encoder/hqvit.yaml`) | **not built** |
+| Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | done; used for equivalence tests and the benchmark |
+| HQViT encoder (`encoder/hqvit.py`, `quantum/hqvit.py`, `encoder=hqvit`; inherits `vit.yaml`) | built and CPU-tested; **not trained** — too slow on CPU, needs the T4 timing gate (phase-2 spec §6) |
 | QCBM priors: entangled / product / frozen (`prior/qcbm.py`, `quantum/bridge.py`, `prior=*_qcbm`); parameter shift + ideal reference (`quantum.grad`) | done; not yet verified on `nvidia` |
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
 | Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
 | Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
 | HEP18 and D3IL as rendered images (`data/`, `readout/`, `conf/dataset/`) | **not built** |
 
-Do not pass `encoder=hqvit` until `conf/encoder/hqvit.yaml` exists. Next build order is
+Do not launch full `encoder=hqvit` training on CPU (~30 min per step at batch 64). Next build order is
 phase-2 spec §10: evaluation refactor → twin positional experiment → QCBM prior → T4 timing gate → HQViT →
 MovingMNIST grid → IBM inference → HEP18 → D3IL. Plan new work with a spec/plan under `docs/superpowers/`.
 

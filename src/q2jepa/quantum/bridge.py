@@ -1,7 +1,8 @@
 """torch <-> CUDA-Q glue for the conditional Born prior (Q-JEPA §3.4, App. A.4).
 
 Angles have shape (B, L+1, n): rows 0..L-1 body RY layers, row L terminal RY (born.py convention).
-Every circuit runs through CUDA-Q; torch only sees probabilities, gradients and measured codes.
+Every circuit runs through CUDA-Q. Torch receives CUDA-Q outputs only: Born probabilities, measured codes and
+(for HQViT, RegisterEvolve) evolved statevectors, from which it forms overlaps and probabilities.
 """
 
 import numpy as np
@@ -69,3 +70,39 @@ def sample_shifted(
     flat[rows, cols, 1, coords] -= SHIFT
     codes = sample(flat.reshape(-1, *angles.shape[1:]), cnot_layers, shots, flip, seed)
     return codes.reshape(b, r, 2, shots, angles.shape[-1])
+
+
+class RegisterEvolve(torch.autograd.Function):
+    """HQViT register evolution ψ = (I ⊗ W(θ)) x for a batch of amplitude-encoded clips (rows of x).
+
+    x: real (N, D) with D = tokens * 2**m; returns complex (N, D). Forward, the θ-gradient (one derivative circuit
+    per angle) and the input gradient (one inverse circuit) all run in CUDA-Q (quantum/hqvit.py).
+    """
+
+    @staticmethod
+    def forward(ctx, x: torch.Tensor, theta: torch.Tensor, m: int, depth: int) -> torch.Tensor:
+        from q2jepa.quantum import hqvit
+
+        ctx.save_for_backward(x, theta)
+        ctx.m, ctx.depth = m, depth
+        out = hqvit.evolve(_np(x), _np(theta), m, depth)
+        return torch.as_tensor(out, device=x.device).to(
+            torch.complex64 if x.dtype == torch.float32 else torch.complex128
+        )
+
+    @staticmethod
+    def backward(ctx, grad: torch.Tensor):
+        from q2jepa.quantum import hqvit
+
+        x, theta = ctx.saved_tensors
+        g = grad.detach().resolve_conj().cpu().numpy()
+        gx = gt = None
+        if ctx.needs_input_grad[0]:
+            gx = torch.as_tensor(
+                np.real(hqvit.evolve_inv(g, _np(theta), ctx.m, ctx.depth)), dtype=x.dtype, device=x.device
+            )
+        if ctx.needs_input_grad[1]:
+            gt = torch.as_tensor(
+                hqvit.theta_grad(_np(x), g, _np(theta), ctx.m, ctx.depth), dtype=theta.dtype, device=theta.device
+            )
+        return gx, gt, None, None

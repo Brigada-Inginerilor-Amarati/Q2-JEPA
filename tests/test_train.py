@@ -48,6 +48,15 @@ def test_qcbm_smoke(tmp_path, extra):
     assert set(m) >= {"coverage", "validity", "tv", "min_ade", "es"}
 
 
+def test_hqvit_smoke_and_inherits_twin_config(tmp_path):
+    cfg = _cfg(["encoder=hqvit", "encoder.patch=4", "encoder.depth=1"])
+    twin = _cfg(["encoder=vit"]).encoder
+    assert {k: v for k, v in cfg.encoder.items() if k not in ("name", "patch", "depth")} == {
+        k: v for k, v in twin.items() if k not in ("name", "patch", "depth")
+    }
+    assert set(run(cfg, tmp_path)) >= {"coverage", "validity", "tv", "min_ade", "es"}
+
+
 def test_ideal_gradient_rejects_readout_noise(tmp_path):
     with pytest.raises(ValueError, match="readout_flip=0"):
         run(_cfg(["prior=entangled_qcbm", "quantum.grad=ideal"]), tmp_path)
@@ -99,7 +108,7 @@ def test_tune_presets_select_on_dev():
         assert (c.trainer.lr_enc, c.trainer.lr_enc_later, c.eval.split, c.encoder.res) == (*lrs, "dev", 64)
 
 
-@pytest.mark.parametrize("enc", [[], ["encoder=vit", "encoder.pool=flatten"]], ids=["cnn", "vit"])
+@pytest.mark.parametrize("enc", [[], ["encoder=vit"]], ids=["cnn", "vit"])
 def test_interrupted_run_resumes_to_same_metrics(tmp_path, enc):
     full = _cfg(["trainer.ckpt_every=2", *enc])
     part = _cfg(["trainer.ckpt_every=2", "trainer.stop_after=3", *enc])

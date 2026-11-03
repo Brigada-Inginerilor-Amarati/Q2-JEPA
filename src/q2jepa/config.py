@@ -17,6 +17,7 @@ class EncoderCfg:
     depth: int = 3
     ffn_hidden: int = 0  # 0 = patch * patch
     pool: str = "mean"  # "mean" (HQViT, ignores patch positions) or "flatten"
+    ansatz_depth: int = 2  # hqvit only: repeated PQC units D per Q/K/V circuit (HQViT §5)
     tokens: str = "frame"  # "frame" (encode frames separately) or "spacetime" (attention across frames)
     pos_emb: str = "none"  # "none" (HQViT paper), "sincos" (fixed 2-D), "learned"
 

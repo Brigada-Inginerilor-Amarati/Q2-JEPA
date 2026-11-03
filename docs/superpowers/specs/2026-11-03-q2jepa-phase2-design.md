@@ -29,6 +29,7 @@ quantum component is not a result.
 | **Fixed 2-D sinusoidal positional embedding** in HQViT and twin; paper-faithful variant kept as an ablation row (§5.3) | team | HQViT §4 |
 | **Equal small tuning budget**: 3 encoder learning-rate schedules per encoder, dev split (F5) | team | — |
 | Architecture-matched twin; parameter counts reported, not matched (F8) | me, team to confirm | — |
+| **Space-time tokens** (attention across frames) for HQViT and twin | team | spec §9 open question (frame fusion) |
 
 ## 3. What adapting HEP18 and D3IL to images means
 
@@ -54,8 +55,8 @@ These rules apply to every comparison we report. Rules marked **(hard)** are add
 - **F2 (hard) — Same input** (preset: `+experiment=phase2`). Every encoder in a comparison receives the same rendered images at the same
   `encoder.res`, with the same `encoder.input_norm`. For any comparison involving HQViT this is `l2`
   (unit-RMS frames): amplitude encoding discards overall brightness, so no classical encoder may see it.
-- **F3 — Same frame fusion.** HQViT encodes each frame separately and fuses after pooling. The twin does the
-  same. The CNN stacks frames as channels (early fusion); this difference is stated next to every CNN row.
+- **F3 — Same frame fusion.** HQViT and the twin use space-time tokens (attention across frames, per-frame
+  mean pooling, shared fusion head; §5.3). The CNN stacks frames as channels (early fusion); this difference is stated next to every CNN row.
 - **F4 (hard) — HQViT claims are made against the twin.** The twin (`encoder=vit`) shares HQViT's patching,
   block count, FFN, positional handling, pooling and fusion head; only `Block.attend` differs.
 - **F5 — Equal tuning budget, dev split only.** Every encoder gets the same 3 encoder learning-rate
@@ -89,7 +90,7 @@ Q-JEPA App. A.2. Frames stacked as channels. Used with `input_norm=l2` in all ph
 
 ### 5.2 Classical ViT twin (`encoder=vit`, built 2026-11-03)
 `src/q2jepa/encoder/vit.py`. 8×8 patches at 64×64 (64 tokens of dimension 64; §5.5), `depth=3` single-head
-post-norm blocks, FFN hidden = patch dim (HQViT §5), fixed sinusoidal positions (§5.3), each frame encoded separately, then pooled and fused by the CNN's head widths
+post-norm blocks, FFN hidden = patch dim (HQViT §5), fixed sinusoidal positions (§5.3), space-time tokens (`tokens=spacetime`: one token set over all frames with a sinusoidal frame embedding; `tokens=frame` encodes frames separately), mean-pooled per frame and fused by the CNN's head widths
 (·→96→64, LayerNorm). Patch layout matches `quantum/attention.py` exactly, so HQViT can reuse `to_patches`.
 
 ### 5.3 Positional information (deviation from HQViT)
@@ -134,11 +135,17 @@ encoder learning rate drops to 1e-5 after iteration 200. Flattening helps but th
 CNN. Next (superseded by the decision above): a fixed 2-D sinusoidal embedding (no learning needed), readout-only diagnostics to locate the loss
 of information, and a twin learning-rate check under F5's equal tuning budget.
 
-### 5.4 HQViT (`encoder=hqvit`, not built)
-Defaults match the twin (`conf/encoder/hqvit.yaml`): 8×8 patches, `pos_emb=sincos`, `pool=mean`, `l2` input.
+### 5.4 HQViT (`encoder=hqvit`, built 2026-11-03, not yet trained)
+`conf/encoder/hqvit.yaml` inherits `vit.yaml` through Hydra defaults, so every twin setting (patches, `pos_emb`,
+`tokens`, pooling, input normalization) is shared by construction. Fixed implementation choices: θ ~ N(0, 0.1²) from a separate
+generator (so shared parameters initialize exactly like the twin's; at θ = 0, W is the CNOT-ring permutation,
+not the identity); ACM and V rescaled by T² and T·d with T the real token count; padded tokens masked out of
+the softmax. Inherent differences to name in results rows: values are non-negative probabilities, and the
+attention scale differs from the twin's 1/√d.
 Reuses the twin's skeleton; replaces `Block.attend` with:
 1. amplitude-encode the block's input tokens (whole-image normalization, HQViT Eq. 5);
-2. Q and K patch states from `quantum/attention.py` (factored mode), A_ij = w_i w_j |⟨q̂_i|k̂_j⟩|²;
+2. Q and K states from the batched register (`quantum/hqvit.py`, §6; equal to `quantum/attention.py`'s factored
+   mode by test), A_ij = w_i w_j |⟨q̂_i|k̂_j⟩|²;
 3. V from the V-register ansatz, read out as per-token measurement probabilities;
 4. softmax(A)·V, then the twin's residual, FFN and LayerNorm.
 Between blocks, token outputs are re-encoded into amplitudes (HQViT §6 notes this conversion cost).
@@ -162,6 +169,19 @@ anchor. Deviation from HQViT, which stops at 32×32; documented here and applied
 seed-0 CPU runs at 3a46ffb: CNN coverage 86.4 (16×16) → 90.3 (32×32).
 
 ## 6. HQViT gradients through CUDA-Q
+
+**Status (2026-11-03): built and CPU-tested; cost measured.** The per-patch version of option B below turned
+out as expensive as parameter shift (one derivative circuit per angle *per patch*: ~9M calls per step). Built
+instead (`quantum/hqvit.py`, `quantum.bridge.RegisterEvolve`): because the ansatz is I ⊗ W(θ), the whole batch
+of clips goes into ONE register (log2 batch + log2 tokens + m qubits; 20 qubits at batch 64, 64×64/8×8,
+space-time tokens). Per block and register: one forward circuit, one derivative circuit per angle
+(dL/dθ_k = Re⟨g|(−i/2) U_{>k} P_k U_{≤k}|x⟩) and one hand-written inverse circuit for the input gradient
+(CUDA-Q cannot auto-adjoint the ansatz's branch). ~800 CUDA-Q calls per training step, independent of image
+size; cost per call scales with the register. Tests: batched register == per-patch kernel, attention ==
+factored ACM, inverse, θ-gradients vs finite differences, autograd vs a dense reference.
+Measured on CPU (qpp-cpu, 16 threads): batch 4 (16 qubits) forward 1.6 s, backward 64 s; the twin takes
+0.02 s. Full batch-64 steps would take ~30+ min on CPU, so HQViT trains only on GPU, and the T4 gate below
+decides feasibility.
 
 The circuit parameters θQ, θK, θV are opaque to PyTorch, so `quantum/bridge.py` supplies their gradients
 through a `torch.autograd.Function`.
@@ -310,6 +330,11 @@ Steps 1–3 and the HEP18/D3IL data modules need no GPU and can proceed in paral
 - **IBM access** (team) — backend and minutes, needed at step 7.
 - **D3IL data source** — download location, licence, and whether camera observations exist.
 - **HEP18/D3IL rendering parameters** — crop, blob/line width; decided by gates in §10.
+- **Token layout** — space-time tokens beat per-frame tokens for the twin (dev, seed 0, corrected input scale:
+  coverage 51.1 vs 38.1; readout-only validity 71% vs 65%; CNN 94.5 / 100%). **Decided (team, 2026-11-03):
+  `tokens=spacetime` for both encoders** (`vit.yaml`, inherited by `hqvit.yaml`).
+- **Input normalization cost** — CNN dev coverage over seeds 0–2: normalized 92.4 (94.5, 87.0, 95.8) vs raw 91.4
+  (96.7, 82.2, 95.3): no measurable cost once `input_scale=0.144`.
 - **Twin learning rate** — the twin underperformed the CNN well beyond the positional issue (§5.3); the F5
   tuning budget and the readout-only diagnostic decide whether it's under-training or information loss.
 - **Platform for reported tables** (CPU vs T4) — F9 requires one per table; HQViT forces the T4.

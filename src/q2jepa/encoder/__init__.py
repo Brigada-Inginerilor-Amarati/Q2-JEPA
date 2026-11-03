@@ -24,6 +24,13 @@ def build_encoder(cfg) -> nn.Module:
 
     if cfg.name == "cnn":
         return CNNEncoder(cfg.res, cfg.d)
+    if cfg.name == "hqvit":
+        from q2jepa.encoder.hqvit import HQViTEncoder
+
+        return HQViTEncoder(
+            cfg.res, cfg.d, cfg.patch, cfg.depth, cfg.ffn_hidden, cfg.pool, cfg.pos_emb,
+            tokens=cfg.tokens, ansatz_depth=cfg.ansatz_depth,
+        )  # fmt: skip
     if cfg.name == "vit":
         return ViTEncoder(
             cfg.res, cfg.d, cfg.patch, cfg.depth, cfg.ffn_hidden, cfg.pool, cfg.pos_emb, tokens=cfg.tokens

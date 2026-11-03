@@ -46,6 +46,7 @@ def test_group_switches():
         "mean",
         "sincos",
     )
+    assert vit.tokens == "spacetime"
     assert _cfg().encoder.input_norm == "none"
     assert _cfg(["+experiment=phase2"]).encoder.input_norm == "l2"
     assert _cfg(["+experiment=phase2"]).encoder.input_scale == 0.144

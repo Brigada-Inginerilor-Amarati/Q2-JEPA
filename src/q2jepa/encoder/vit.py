@@ -12,6 +12,7 @@ The embedding is added to the pixel tokens before block 1, so HQViT amplitude-en
 """
 
 import math
+from collections.abc import Callable
 
 import torch
 from torch import nn
@@ -76,6 +77,7 @@ class ViTEncoder(nn.Module):
         pos_emb: str = "none",
         frames: int = 3,
         tokens: str = "frame",
+        block: Callable[[int, int], nn.Module] | None = None,
     ):
         super().__init__()
         if pool not in ("mean", "flatten"):
@@ -97,7 +99,7 @@ class ViTEncoder(nn.Module):
             self.pos = None
         else:
             raise ValueError(f"unknown pos_emb {pos_emb!r}")
-        self.blocks = nn.ModuleList(Block(dim, ffn_hidden or dim) for _ in range(depth))
+        self.blocks = nn.ModuleList((block or Block)(dim, ffn_hidden or dim) for _ in range(depth))
         per_frame = dim if pool == "mean" else tokens * dim
         # Temporal fusion: same head widths as the CNN encoder (Q-JEPA App. A.2).
         self.head = nn.Sequential(

@@ -1,5 +1,7 @@
 name: vit
 input_norm: l2
-# phase-2 spec §5.3: 8x8 patches at 64x64, fixed sinusoidal positions (paper-faithful ablation: pos_emb=none)
+# phase-2 spec §5.3/§5.5: 8x8 patches at 64x64, fixed sinusoidal positions (paper-faithful ablation: pos_emb=none),
+# space-time tokens so attention compares patches across frames (team decision 2026-11-03).
 patch: 8
 pos_emb: sincos
+tokens: spacetime
