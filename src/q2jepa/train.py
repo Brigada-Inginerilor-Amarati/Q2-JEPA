@@ -81,6 +81,10 @@ def _identity(cfg) -> str:
 
 
 def run(cfg, out_dir: Path) -> dict[str, float]:
+    if cfg.dataset.name != "mmnist":  # remove when the benchmark's data, readout and metrics are wired in here
+        raise NotImplementedError(
+            f"dataset {cfg.dataset.name!r} is not wired into training; this would train MovingMNIST"
+        )
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     set_target(cfg.quantum.target)

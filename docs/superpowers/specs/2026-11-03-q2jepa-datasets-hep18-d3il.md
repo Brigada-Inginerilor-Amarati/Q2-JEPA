@@ -268,8 +268,10 @@ Write these first; they are the acceptance criteria.
    under `scripts/` (not committed images). The same script prints the mean norms; rerun it whenever σ changes,
    because `input_scale` depends on σ (a peak-1 blob has norm σ√π).
 3. `uv run pytest` and `uv run ruff check .` pass. Work on a branch; open a PR against `main`.
-4. In the PR notes for whoever wires up training: `train.py` ignores `dataset.name`, so `dataset=hep18` currently
-   trains MovingMNIST without any error. Also, each car has only 4 distinct future clips (A, B, C, D), so encoding
+4. In the PR notes for whoever wires up training: `train.py` ignores `dataset.name`, so it raises
+   `NotImplementedError` for anything but `mmnist` until the benchmarks are wired in; remove that guard then. Also,
+   `+experiment=phase2` hardcodes MovingMNIST's `input_scale` of 0.144; HEP18 and D3IL need their own values
+   (module docstrings). Also, each car has only 4 distinct future clips (A, B, C, D), so encoding
    16 unique clips per observation instead of 72 reduces the phase-2 §8.3 HQViT cost flag from ~36× to ~8×.
 
 ## 8. Open questions (answer in the PR or ask us)
@@ -317,3 +319,5 @@ Found in the real D3IL data, decided during implementation:
 13. Arc length is checked along the recording (§6): non-final segments are exact to 1e-9 m there. The polyline through
     the 24 resampled points cuts corners of the 1.4 cm frame steps and runs up to 1.9% short, so the 1e-3 tolerance
     cannot hold on it; the test bounds that shortfall at 2% instead.
+14. `train.py` raises `NotImplementedError` for unwired datasets: adding the two presets would otherwise have let
+    `dataset=hep18` train MovingMNIST and record it as HEP18. This is the one line this work changes in training.

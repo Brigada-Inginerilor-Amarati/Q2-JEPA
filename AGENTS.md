@@ -38,7 +38,7 @@ The README describes the target. What actually exists today:
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
 | Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
 | Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
-| HEP18 and D3IL data and renderers (`data/hep18.py`, `data/d3il.py`, `scripts/fetch_d3il.py`, `conf/dataset/`) | done; σ provisional until the render check (dataset spec §8). Not wired into `train.py`: `dataset=hep18` still trains MovingMNIST |
+| HEP18 and D3IL data and renderers (`data/hep18.py`, `data/d3il.py`, `scripts/fetch_d3il.py`, `conf/dataset/`) | done; σ provisional until the render check (dataset spec §8). Not wired into `train.py`: `dataset=hep18` or `d3il` raises `NotImplementedError` |
 | HEP18 and D3IL readouts and metrics (`readout/`) | **not built** |
 
 Do not launch full `encoder=hqvit` training on CPU (~30 min per step at batch 64). Next build order is
