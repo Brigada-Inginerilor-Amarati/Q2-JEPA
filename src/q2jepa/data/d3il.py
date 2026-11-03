@@ -8,6 +8,10 @@ Data: paths are the recorded c_pos, cut at the first upward crossing of the goal
 Recordings run on to y = 0.488 m; App. B.1 does not mention the cut, but without it the count is 1,161 segments, and
 with it 1,029 against the paper's 1,030. Without it demos also leave the render window. The 96 recorded starts, the
 24 routes and their 22 x 4 + 3 + 5 distribution all match App. B.4.
+
+Source zip sha256: f75acb9528bf272b2780a4ae42e199f76960d675d8039f2ff351d0cd5a18816a (see scripts/fetch_d3il.py).
+Mean L2 norm of a rendered fold-0 train frame at SIGMA = 0.85: 2.2009, so encoder.input_scale = 0.0344. Rerun
+scripts/render_examples.py if SIGMA changes.
 """
 
 from itertools import pairwise

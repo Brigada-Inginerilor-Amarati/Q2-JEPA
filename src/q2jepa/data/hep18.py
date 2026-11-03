@@ -11,6 +11,9 @@ second = E. Schedules are numbered A, B, C = 0, 1, 2.
 
 Road frame is HighwayEnv's: +x east, +y south (screen coordinates). Each car's s is 0 on the centre line and increases
 along its driving direction, in the right-hand lane.
+
+Mean L2 norm of a rendered train frame at SIGMA = 1.25: 2.2156, so encoder.input_scale = 0.0346. Rerun
+scripts/render_examples.py if SIGMA changes.
 """
 
 from typing import ClassVar, Literal

@@ -1,8 +1,14 @@
+import ast
+import importlib
+import math
+import socket
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
 
-from q2jepa.data import hep18
+from q2jepa.data import d3il, hep18
 from q2jepa.data.hep18 import (
     COLUMN,
     HEP18,
@@ -11,6 +17,7 @@ from q2jepa.data.hep18 import (
     SCHEDULE_B,
     SCHEDULE_C,
     SCHEDULE_D,
+    SIGMA,
     VEHICLE_LENGTH,
     any_overlap,
     car_state,
@@ -23,6 +30,7 @@ from q2jepa.data.hep18 import (
     schedule_acc,
     to_xy,
 )
+from scripts.render_examples import mean_frame_norm
 
 D0, V = 45.0, 8.5
 ITEM_KEYS = {"obs_state", "fut_state", "obs_xy", "fut_xy", "future_id", "obs_idx"}
@@ -219,3 +227,25 @@ def test_batched_equals_per_sample():
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU")
 def test_renderer_stays_on_input_device():
     assert render_agent_clip(torch.zeros(3, device="cuda")).device.type == "cuda"
+
+
+def test_mean_frame_norm_matches_analytic_blob(train):
+    clips = render_agent_clip(torch.tensor(train.obs_state[:8, :, :, 0], dtype=torch.float32))
+    assert abs(mean_frame_norm(clips) - SIGMA * math.sqrt(math.pi)) < 0.02
+
+
+@pytest.mark.parametrize("module", [hep18, d3il])
+def test_import_does_no_network(module, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("network access during import")
+
+    monkeypatch.setattr(socket, "socket", refuse)
+    importlib.reload(module)
+
+
+@pytest.mark.parametrize("module", [hep18, d3il])
+def test_only_fetch_script_downloads(module):
+    tree = ast.parse(Path(module.__file__).read_text())
+    roots = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    roots |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert not roots & {"gdown", "urllib", "requests", "highway_env"}
