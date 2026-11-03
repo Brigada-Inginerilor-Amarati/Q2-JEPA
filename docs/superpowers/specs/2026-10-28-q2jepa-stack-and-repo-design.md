@@ -9,7 +9,7 @@ We are building Q²-JEPA for a one-month AI × HPC × Quantum hackathon. It is a
 1. **HQViT encoder** (Zhang et al., arXiv:2504.02730). Whole-image amplitude encoding plus swap-test quantum self-attention. It replaces the small CNN encoder used in the Q-JEPA paper.
 2. **Conditional Born-machine prior** (Liu et al., Q-JEPA, arXiv:2610.27921). An entangled QCBM, a quantum circuit that we sample from, produces binary latent action codes. A shared predictor turns each code into a different future representation.
 
-All quantum execution is **simulated with NVIDIA CUDA-Q on GPUs**. That is the HPC story. The full architecture is specified in `docs/Q2_JEPA_Architecture_Slide.pdf`. The pitch deck is `docs/HQViT x Q-JEPA.pdf`. Both source papers are in `docs/`.
+All quantum execution is **simulated with NVIDIA CUDA-Q on GPUs**. That is the HPC story. The pitch deck is `docs/HQViT x Q-JEPA.pdf`. Both source papers are in `docs/`.
 
 This document covers **the tech stack and how the repo starts out**. It is not a model-training plan.
 
@@ -99,7 +99,7 @@ Q2-JEPA/
 │   ├── test_attention_equivalence.py  # factored 4q == full 17q swap test
 │   ├── test_born_equivalence.py       # cudaq vs qiskit Born probs (bit order)
 │   └── test_losses.py                 # VISReg / energy score sanity
-└── docs/                     # papers, slides, specs
+└── docs/                     # papers, specs
 ```
 
 Rules (my calls):
@@ -109,7 +109,7 @@ Rules (my calls):
 
 ## 6. Key technical decisions
 
-**Two execution modes for HQViT attention (from the slide; which mode does what is my call).**
+**Two execution modes for HQViT attention (which mode does what is my call).**
 - *Factored 4-qubit mode*: exact. It works because the ansatz is `I_idx ⊗ W(θ)` and the swap test acts only on patch qubits, so the joint distribution splits into per-patch circuits. This is the **training path**.
 - *Full 17-qubit swap-test mode* (21q at 32×32): shot-based and faithful to the HQViT paper. Used for the equivalence test and the HPC benchmark (`bench_attention.py`: wall-clock and shots, CPU vs GPU, full vs factored). A short training run in this mode is optional.
 
@@ -150,5 +150,5 @@ After that come quantum prior → HQViT encoder → IBM inference, all from the 
 ## 9. Left to the builder
 
 - The encoder-gradient strategy through CUDA-Q (see section 6).
-- How the 3-frame clip enters HQViT: amplitude-encode each frame and fuse after pooling ("Temporal Fusion" on the slide), or encode frames jointly.
+- How the 3-frame clip enters HQViT: amplitude-encode each frame and fuse after pooling ("Temporal Fusion"), or encode frames jointly.
 - W&B project and entity naming, and how the CI-less test workflow runs (local `uv run pytest`).

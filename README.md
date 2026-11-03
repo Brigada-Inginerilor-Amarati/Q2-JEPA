@@ -99,11 +99,35 @@ Q2-JEPA/
 ├── scripts/                  # Attention HPC benchmark & Colab wheel setup helper
 ├── notebooks/                # Thin Colab GPU driver notebook
 ├── tests/                    # Equivalence, prior, loss, readout, and training tests
-└── docs/                     # Architecture slides, papers, specs, and baseline results
+└── docs/                     # Papers, specs, and baseline results
 ```
 
 ## Documentation & Results
 
-- **Architecture & Pitch**: [`docs/papers/Q2_JEPA_Architecture_Slide.pdf`](docs/papers/Q2_JEPA_Architecture_Slide.pdf) · [`docs/papers/HQViT x Q-JEPA.pdf`](docs/papers/HQViT%20x%20Q-JEPA.pdf)
+- **Pitch**: [`docs/papers/HQViT x Q-JEPA.pdf`](docs/papers/HQViT%20x%20Q-JEPA.pdf)
 - **Design Spec**: [`docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md`](docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md)
 - **Classical MovingMNIST Baselines**: [`docs/results/2026-10-kickstart-classical.md`](docs/results/2026-10-kickstart-classical.md)
+
+## Citations
+
+```bibtex
+@misc{zhang2025hqvithybridquantumvision,
+  title={HQViT: Hybrid Quantum Vision Transformer for Image Classification},
+  author={Hui Zhang and Qinglin Zhao and Mengchu Zhou and Li Feng},
+  year={2025},
+  eprint={2504.02730},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV},
+  url={https://arxiv.org/abs/2504.02730},
+}
+
+@misc{liu2026quantumjepaquantumbornpriors,
+  title={Quantum-JEPA: Quantum Born Priors for Latent-Action JEPA World Models},
+  author={Zhiyuan Liu and Sicheng Liu and Haiyu Wu},
+  year={2026},
+  eprint={2610.27921},
+  archivePrefix={arXiv},
+  primaryClass={cs.AI},
+  url={https://arxiv.org/abs/2610.27921},
+}
+```

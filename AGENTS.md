@@ -17,7 +17,6 @@ Read before non-trivial work:
 |---|---|
 | [docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md](docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md) | Stack, layout, rules, experiment grid, open questions |
 | [docs/superpowers/plans/2026-10-28-q2jepa-kickstart.md](docs/superpowers/plans/2026-10-28-q2jepa-kickstart.md) | Kickstart tasks 1–11 (done) and their acceptance criteria |
-| [docs/papers/Q2_JEPA_Architecture_Slide.pdf](docs/papers/Q2_JEPA_Architecture_Slide.pdf) | Full target architecture |
 | [docs/results/](docs/results/) | Reported numbers; every row reproducible from overrides + seed + SHA |
 
 ## 2. Current state vs. target
