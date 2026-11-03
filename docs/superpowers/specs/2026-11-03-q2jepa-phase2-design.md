@@ -183,6 +183,29 @@ Measured on CPU (qpp-cpu, 16 threads): batch 4 (16 qubits) forward 1.6 s, backwa
 0.02 s. Full batch-64 steps would take ~30+ min on CPU, so HQViT trains only on GPU, and the T4 gate below
 decides feasibility.
 
+**T4 gate result (2026-11-03, Colab T4, CUDA-Q 0.16 `nvidia` fp32, commit e145b19):** all 37 quantum tests pass
+on `nvidia` (after making tolerances precision-aware). HQViT at 64×64/8×8, space-time tokens, 3 blocks:
+
+| Batch | HQViT fwd | HQViT bwd | s/step (obs + target) | 4,000 steps | Twin s/step |
+|---|---|---|---|---|---|
+| 4 | 0.08 s | 2.44 s | 5.0 | 5.6 h | 0.1 |
+| 16 | 0.16 s | 4.28 s | 8.9 | 9.9 h | ~0 |
+| 64 | 0.33 s | 10.99 s | 22.7 | **25.2 h** | ~0 |
+
+~26× faster than CPU, but ~25 h per run makes the 12 HQViT grid runs ~300 T4-hours: **optimize before the grid**
+(backward dominates: ~380 derivative circuits, each round-tripping a 2^20 state through host memory).
+
+Attention benchmark (`scripts/bench_attention.py`, ms per image, 16 images, same session):
+
+| res | mode | qubits | qpp-cpu (Colab, 2 vCPU) | nvidia (T4) |
+|---|---|---|---|---|
+| 16 | factored | 4 | 164 | 148 |
+| 16 | full | 17 | 4,322 | 6.5 |
+| 32 | factored | 4 | 376 | 496 |
+| 32 | full | 21 | 81,743 | 38.5 (2,100× faster) |
+
+The per-patch factored loop is overhead-bound on both targets (many tiny circuits); the GPU wins on large registers.
+
 The circuit parameters θQ, θK, θV are opaque to PyTorch, so `quantum/bridge.py` supplies their gradients
 through a `torch.autograd.Function`.
 

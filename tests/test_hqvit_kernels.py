@@ -37,7 +37,8 @@ def test_batched_attention_matches_factored_acm():
 def test_inverse_undoes_forward_any_norm(m):
     _, x, _ = _setup(3, n=5, tokens=4, d=2**m)
     theta = np.random.default_rng(4).uniform(-np.pi, np.pi, n_ansatz_params(m, 2))
-    np.testing.assert_allclose(evolve_inv(evolve(x, theta, m, 2), theta, m, 2), x, atol=1e-6)
+    atol = 1e-4 if is_fp32() else 1e-6  # |x| ~ 25: fp32 round-trip error ~ 1e-6 relative
+    np.testing.assert_allclose(evolve_inv(evolve(x, theta, m, 2), theta, m, 2), x, atol=atol)
 
 
 def test_theta_gradient_matches_finite_differences():
@@ -75,7 +76,7 @@ def test_register_evolve_autograd_matches_dense_reference():
     rng = np.random.default_rng(6)
     m, d, tokens = 2, 4, 2
     theta = rng.uniform(-np.pi, np.pi, n_ansatz_params(m, 2))
-    mat = torch.as_tensor(evolve(np.eye(tokens * d), theta, m, 2).T)  # column j = image of basis vector j
+    mat = torch.as_tensor(evolve(np.eye(tokens * d), theta, m, 2).T).to(torch.complex128)  # column j = image of e_j
 
     x = torch.tensor(rng.normal(size=(3, tokens * d)), requires_grad=True)
     t = torch.tensor(theta, requires_grad=True)
@@ -85,7 +86,8 @@ def test_register_evolve_autograd_matches_dense_reference():
 
     xr = x.detach().clone().requires_grad_()
     loss(xr.to(torch.complex128) @ mat.T).backward()
-    torch.testing.assert_close(x.grad, xr.grad)
+    gtol = 1e-4 if is_fp32() else 1e-7
+    torch.testing.assert_close(x.grad, xr.grad, atol=gtol, rtol=gtol)
 
     (eps, tol), num = ((1e-2, 2e-2) if is_fp32() else (1e-6, 1e-5)), []
     for e in np.eye(len(theta)):
