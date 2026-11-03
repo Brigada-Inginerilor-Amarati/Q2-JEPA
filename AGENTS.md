@@ -16,6 +16,7 @@ Read before non-trivial work:
 | Doc | What it decides |
 |---|---|
 | [docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md](docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md) | Stack, layout, rules, experiment grid, open questions |
+| [docs/superpowers/specs/2026-11-03-q2jepa-phase2-design.md](docs/superpowers/specs/2026-11-03-q2jepa-phase2-design.md) | Phase 2: fairness protocol, ViT twin, HQViT/QCBM design, HEP18 + D3IL as images, grid, build order. Overrides the kickstart spec where they differ |
 | [docs/superpowers/plans/2026-10-28-q2jepa-kickstart.md](docs/superpowers/plans/2026-10-28-q2jepa-kickstart.md) | Kickstart tasks 1–11 (done) and their acceptance criteria |
 | [docs/papers/Q2_JEPA_Architecture_Slide.pdf](docs/papers/Q2_JEPA_Architecture_Slide.pdf) | Full target architecture |
 | [docs/results/](docs/results/) | Reported numbers; every row reproducible from overrides + seed + SHA |
@@ -28,6 +29,7 @@ The README describes the target. What actually exists today:
 |---|---|
 | Stochastic MovingMNIST (`data/mmnist.py`) | done |
 | CNN encoder (`encoder/cnn.py`, `encoder=cnn`) | done |
+| Classical ViT twin of HQViT (`encoder/vit.py`, `encoder=vit`) | done; positional setting under test (phase-2 spec §5.3) |
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
 | Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | kernels only, not wired into an encoder |
@@ -35,10 +37,12 @@ The README describes the target. What actually exists today:
 | HQViT encoder (`encoder/hqvit.py`, `conf/encoder/hqvit.yaml`) | **not built** |
 | QCBM prior + param-shift gradients (`quantum/bridge.py`, `conf/prior/*qcbm*.yaml`) | **not built** |
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
+| Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
+| HEP18 and D3IL as rendered images (`data/`, `readout/`, `conf/dataset/`) | **not built** |
 
-Do not pass `encoder=hqvit` or `prior=*qcbm*` until the matching config group exists. Next build order
-(spec §7): quantum prior → HQViT encoder → IBM inference. Plan new work with a spec/plan under
-`docs/superpowers/` like the kickstart.
+Do not pass `encoder=hqvit` or `prior=*qcbm*` until the matching config group exists. Next build order is
+phase-2 spec §10: evaluation refactor → twin positional experiment → QCBM prior → T4 timing gate → HQViT →
+MovingMNIST grid → IBM inference → HEP18 → D3IL. Plan new work with a spec/plan under `docs/superpowers/`.
 
 ## 3. Hard rules
 
@@ -49,8 +53,13 @@ From the spec; breaking any of these makes results invalid even if the code runs
   (Both enforced by `tests/test_import_boundaries.py`.)
 - No "quantum" path that bypasses CUDA-Q (e.g. a hand-written torch statevector) in any reported run.
 - No quantum result without a classical baseline trained under identical settings (same `encoder.res`, seed, trainer).
-- Every encoder in the grid, CNN included, sees the same downsampled input (`encoder.res`); data,
-  readout and metrics stay at native 64×64.
+  Only the component under test changes between compared rows.
+- HQViT claims are made against the classical twin (`encoder=vit`) with the same patching, blocks, FFN,
+  positional handling, pooling and fusion; the CNN is an anchor, not the headline baseline.
+- Every encoder in the grid, CNN included, sees the same downsampled input (`encoder.res`) with the same
+  `encoder.input_norm` (`l2` whenever HQViT is compared — use `+experiment=phase2`); data, readout and metrics stay at native
+  resolution / state space (64×64 for MovingMNIST; metres and routes for HEP18 and D3IL).
+- All rows of one comparison table run on the same platform; numbers differ across machines.
 - Every reported number must be regenerable from config overrides + seed + commit SHA. No manual
   notebook tweaks: change config or code, not the notebook.
 - A new benchmark = a `data/` module + a `readout/` module + `conf/dataset/*.yaml` + metrics. Never a
