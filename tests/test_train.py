@@ -33,6 +33,52 @@ def test_smoke_and_reproducible(tmp_path):
     assert json.loads((tmp_path / "a" / "metrics.json").read_text()) == m1
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["prior=entangled_qcbm"],
+        ["prior=product_qcbm"],
+        ["prior=frozen_qcbm"],
+        ["prior=entangled_qcbm", "quantum.grad=ideal", "quantum.readout_flip=0"],
+    ],
+    ids=["entangled", "product", "frozen", "ideal"],
+)
+def test_qcbm_smoke(tmp_path, extra):
+    m = run(_cfg([*extra, "quantum.shots=8", "quantum.shift_obs=2", "quantum.shift_coords=3"]), tmp_path)
+    assert set(m) >= {"coverage", "validity", "tv", "min_ade", "es"}
+
+
+def test_ideal_gradient_rejects_readout_noise(tmp_path):
+    with pytest.raises(ValueError, match="readout_flip=0"):
+        run(_cfg(["prior=entangled_qcbm", "quantum.grad=ideal"]), tmp_path)
+
+
+def test_new_default_keys_keep_checkpoint_identity():
+    from q2jepa.train import _identity
+
+    base = _identity(_cfg())
+    assert _identity(_cfg(["encoder.input_scale=1.0", "quantum.grad=shift"])) == base
+    assert _identity(_cfg(["encoder.input_scale=0.5"])) != base
+
+
+def test_qcbm_resume_is_exact(tmp_path):
+    q = ["prior=entangled_qcbm", "quantum.shots=8", "quantum.shift_obs=2", "trainer.ckpt_every=2"]
+    ref = run(_cfg(q), tmp_path / "ref")
+    assert run(_cfg([*q, "trainer.stop_after=5"]), tmp_path / "res") == {}
+    assert run(_cfg(q), tmp_path / "res") == ref
+
+
+def test_frozen_qcbm_is_noise_free_and_never_updates(tmp_path):
+    import torch
+
+    cfg = _cfg(["prior=frozen_qcbm"])
+    assert cfg.quantum.readout_flip == 0.0
+    run(cfg, tmp_path)
+    ck = torch.load(tmp_path / "ckpt.pt", weights_only=True)["prior"]
+    assert torch.equal(ck["net.2.weight"], torch.zeros_like(ck["net.2.weight"]))  # zero init never moved
+    assert torch.equal(ck["terminal"], torch.zeros(3))
+
+
 def test_dev_split_eval_reuses_checkpoint(tmp_path):
     test = run(_cfg(), tmp_path)
     dev = run(_cfg(["eval.split=dev"]), tmp_path)  # finished run: only re-evaluates

@@ -38,12 +38,25 @@ def born_probs(angles: np.ndarray, cnot_layers) -> np.ndarray:
     return np.abs(state) ** 2
 
 
-def sample_codes(angles: np.ndarray, cnot_layers, shots: int, rng: np.random.Generator) -> np.ndarray:
-    # ponytail: one cudaq.sample per observation; batch via broadcasting if profiling says so
+def brickwork_layers(n: int, layers: int) -> list[list[tuple[int, int]]]:
+    """Q-JEPA App. B/C: even layers couple (0,1),(2,3),..., odd layers (1,2),(3,4),...; lower index controls."""
+    return [[(j, j + 1) for j in range(layer % 2, n - 1, 2)] for layer in range(layers)]
+
+
+def sample_codes(
+    angles: np.ndarray, cnot_layers, shots: int, rng: np.random.Generator, seed: int | None = None
+) -> np.ndarray:
+    """(B, L+1, n) angles -> (B, shots, n) uint8 codes from one broadcast cudaq.sample call.
+
+    `seed` seeds CUDA-Q's sampler so runs (and resumed runs) are reproducible; shot order is shuffled by `rng`.
+    """
+    if seed is not None:
+        cudaq.set_random_seed(seed)
+    args = [_kernel_args(a, cnot_layers) for a in angles]
+    results = cudaq.sample(_born, *(list(col) for col in zip(*args, strict=True)), shots_count=shots)
+    results = results if isinstance(results, list) else [results]
     out = np.empty((angles.shape[0], shots, angles.shape[-1]), dtype=np.uint8)
-    for b in range(angles.shape[0]):
-        n, flat, cnots, offsets = _kernel_args(angles[b], cnot_layers)
-        counts = cudaq.sample(_born, n, flat, cnots, offsets, shots_count=shots)
+    for b, counts in enumerate(results):
         bits = [[int(ch) for ch in bitstring] for bitstring, k in counts.items() for _ in range(k)]
         out[b] = rng.permutation(np.array(bits, dtype=np.uint8))
     return out

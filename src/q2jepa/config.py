@@ -10,6 +10,7 @@ class EncoderCfg:
     name: str = "cnn"
     res: int = 16  # encoder input resolution; data/readout/metrics stay 64x64
     d: int = 64
+    input_scale: float = 1.0  # l2 only: constant multiplier on the unit-RMS frame
     input_norm: str = "none"  # "l2": unit-RMS frames, what amplitude encoding keeps; use for fair HQViT comparisons
     # vit / hqvit only (HQViT §5: 4x4 patches, L = 3 blocks, FFN hidden = patch dim)
     patch: int = 4
@@ -25,7 +26,8 @@ class PriorCfg:
     n_bits: int = 3
     hidden: int = 48
     components: int = 2  # mixture only
-    layers: int = 2  # QCBM body layers
+    offset_init: float = 0.1  # QCBM: std of the body-angle offsets; Q-JEPA §3.2 says only "small"
+    layers: int = 2  # QCBM body layers (brickwork CNOTs; MovingMNIST: CNOT(0,1), CNOT(1,2))
 
 
 @dataclass
@@ -40,6 +42,7 @@ class QuantumCfg:
     readout_flip: float = 0.005
     shift_obs: int = 8
     shift_coords: int = 9
+    grad: str = "shift"  # QCBM prior update: "shift" (Eq. 14, reported) or "ideal" (reference, App. A.4)
 
 
 @dataclass

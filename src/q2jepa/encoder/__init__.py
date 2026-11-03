@@ -3,15 +3,16 @@ import torch.nn.functional as F
 from torch import nn
 
 
-def prepare(x: torch.Tensor, res: int, norm: str = "none") -> torch.Tensor:
+def prepare(x: torch.Tensor, res: int, norm: str = "none", scale: float = 1.0) -> torch.Tensor:
     """Downsample encoder input only; data, readout and metrics stay 64x64.
 
     norm="l2" rescales each frame to unit RMS: the information an amplitude-encoded frame keeps (overall
-    brightness is lost), up to a constant factor. Use it for every encoder in a fair comparison with HQViT.
+    brightness is lost), up to a constant factor `scale` (information-free; it only sets the input magnitude).
+    Use it for every encoder in a fair comparison with HQViT.
     """
     x = x if x.shape[-1] == res else F.interpolate(x, size=(res, res), mode="area")
     if norm == "l2":
-        return x * (res / x.norm(dim=(-2, -1), keepdim=True).clamp_min(1e-12))
+        return x * (scale * res / x.norm(dim=(-2, -1), keepdim=True).clamp_min(1e-12))
     if norm != "none":
         raise ValueError(f"unknown input norm {norm!r}")
     return x

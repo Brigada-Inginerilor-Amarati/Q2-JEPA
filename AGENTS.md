@@ -33,15 +33,14 @@ The README describes the target. What actually exists today:
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
 | Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | kernels only, not wired into an encoder |
-| Born-machine kernel (`quantum/born.py`) | kernel only, not wired into a prior |
 | HQViT encoder (`encoder/hqvit.py`, `conf/encoder/hqvit.yaml`) | **not built** |
-| QCBM prior + param-shift gradients (`quantum/bridge.py`, `conf/prior/*qcbm*.yaml`) | **not built** |
+| QCBM priors: entangled / product / frozen (`prior/qcbm.py`, `quantum/bridge.py`, `prior=*_qcbm`); parameter shift + ideal reference (`quantum.grad`) | done; not yet verified on `nvidia` |
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
 | Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
 | Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
 | HEP18 and D3IL as rendered images (`data/`, `readout/`, `conf/dataset/`) | **not built** |
 
-Do not pass `encoder=hqvit` or `prior=*qcbm*` until the matching config group exists. Next build order is
+Do not pass `encoder=hqvit` until `conf/encoder/hqvit.yaml` exists. Next build order is
 phase-2 spec §10: evaluation refactor → twin positional experiment → QCBM prior → T4 timing gate → HQViT →
 MovingMNIST grid → IBM inference → HEP18 → D3IL. Plan new work with a spec/plan under `docs/superpowers/`.
 

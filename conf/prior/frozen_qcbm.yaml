@@ -1,0 +1,7 @@
+# @package _global_
+# Entangled-QCBM fixed at its (input-independent) initialization; no prior updates.
+# Q-JEPA keeps it noise-free on MovingMNIST and HEP18 (App. F.1); set quantum.readout_flip=0.005 for D3IL (App. B.3).
+prior:
+  name: frozen_qcbm
+quantum:
+  readout_flip: 0.0

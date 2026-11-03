@@ -52,7 +52,11 @@ class MixturePrior(nn.Module):
         return torch.logsumexp(F.log_softmax(comp_logits, -1)[:, None] + per_comp, -1)
 
 
-def build_prior(cfg, d: int) -> nn.Module:
+def build_prior(cfg, d: int, quantum=None) -> nn.Module:
+    if cfg.name.endswith("_qcbm"):
+        from q2jepa.prior.qcbm import build_qcbm
+
+        return build_qcbm(cfg, d, quantum)
     if cfg.name == "softmax_categorical":
         return SoftmaxCategorical(d, cfg.hidden, cfg.n_bits)
     if cfg.name == "mixture":

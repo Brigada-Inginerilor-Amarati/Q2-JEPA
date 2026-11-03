@@ -55,6 +55,7 @@ def test_l2_input_norm_is_scale_free():
     torch.testing.assert_close(a, b)
     torch.testing.assert_close(a.pow(2).mean((-2, -1)), torch.ones(4, 3))  # unit RMS per frame
     assert torch.equal(prepare(x, 16), prepare(x, 16, "none"))
+    torch.testing.assert_close(prepare(x, 16, "l2", 0.25), 0.25 * a)
 
 
 def test_ffn_hidden_defaults_to_patch_dim_and_res_checked():

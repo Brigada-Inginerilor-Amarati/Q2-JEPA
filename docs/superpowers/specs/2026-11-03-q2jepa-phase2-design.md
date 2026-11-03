@@ -182,21 +182,33 @@ small case, on both `qpp-cpu` and `nvidia`.
 
 ## 7. QCBM prior
 
+**Status (2026-11-03): built** — `prior/qcbm.py`, `quantum/bridge.py`, `conf/prior/{entangled,product,frozen}_qcbm.yaml`.
+Implementation notes: the conditioner has no input LayerNorm and outputs only the L·n body RY angles, which
+reproduces Table 7's 3,423 active parameters; the offsets ϑ start at N(0, 0.1²) (the paper says only "small");
+sampling is one broadcast `cudaq.sample` call per batch, seeded from the per-iteration torch seed so resumes are
+exact. Tests: exact BornProbs gradient vs finite differences; the Eq. 14 estimate vs the exact gradient of a fixed
+cost; normalization, sampled frequencies, product independence, the Table 7 parameter count, and training/resume
+for every variant. CPU cost at 64×64 (CNN, batch 64): 0.25 s/iteration vs 0.11 s for Softmax-Categorical.
+
 Following Q-JEPA §3, App. A.4 and App. C.
 
 - **Module** `prior/qcbm.py` with the classical-prior interface `sample(h, k)` / `log_prob(h, z)`.
-  Conditioner `g_η`: LayerNorm, d→48, SiLU, 48→(L+1)·n with zero-initialized output; angles
-  α = g_η(h) + ϑ (offsets ϑ trainable).
+  Conditioner `g_η`: d→48, SiLU, 48→L·n with zero-initialized output (no LayerNorm, Table 7 count); body angles
+  α = g_η(h) + ϑ + π/2·1[ℓ=1], offsets ϑ ~ N(0, `prior.offset_init`²), terminal φ shared and zero-initialized.
 - **Circuits** from `quantum/born.py`: MovingMNIST n=3, L=2 (CNOT (0,1), (1,2)); HEP18 n=12, L=4 (4×3 grid
   layout, App. C); D3IL n=8, L=4 brickwork. Product-QCBM drops the CNOTs; Frozen-QCBM never updates.
-- **Gradient modes** (`quantum.grad`): `ideal` (score-function through `born_probs`, reference only),
-  `shift` (parameter shift, App. A.4: b of B observations, r of G coordinates, shots per shifted circuit),
-  `shift_noise` (plus 0.5% readout flips). Grid rows use `shift_noise`, as in the paper's tables.
-- **Training loop.** The prior update is computed separately from backprop (App. A.4 step 4) and written into
-  the prior's `.grad` before the shared clip-and-step. `train.py` gets a prior hook; classical priors keep
-  their current score-function path.
-- **Configs** `conf/prior/{product_qcbm,entangled_qcbm,frozen_qcbm}.yaml`; new `QuantumCfg` keys `grad`,
-  `shots_eval`.
+- **Gradient settings** (App. D), set by `quantum.grad` and `quantum.readout_flip`:
+  - noisy parameter shift — `grad=shift`, `readout_flip=0.005` (the defaults; **grid rows use this**);
+  - noise-free parameter shift — `grad=shift`, `readout_flip=0`;
+  - ideal gradient — `grad=ideal`, `readout_flip=0` (score function through exact Born probabilities; flips
+    are rejected because they would bias it).
+  Parameter shift uses b = `shift_obs` of B observations, r = `shift_coords` of G angles, `quantum.shots` per
+  shifted circuit, and the K unshifted training predictions as the reference set Q.
+- **Training loop.** The prior update is computed separately (App. A.4 step 4) as a zero-valued surrogate
+  whose gradient is the estimate, added to the loss before the shared clip-and-step. Classical priors keep
+  their score-function path.
+- **Configs** `conf/prior/{product_qcbm,entangled_qcbm,frozen_qcbm}.yaml`; new keys `quantum.grad`,
+  `prior.offset_init`. Evaluation draws `eval.k_eval` samples per observation.
 - **Evaluation noise.** QCBM rows also apply the 0.5% flips at evaluation (App. D).
 
 ## 8. Evaluation (paper-exact)
