@@ -206,6 +206,15 @@ Attention benchmark (`scripts/bench_attention.py`, ms per image, 16 images, same
 
 The per-patch factored loop is overhead-bound on both targets (many tiny circuits); the GPU wins on large registers.
 
+**Optimization 1 (2026-11-03): adjoint reverse sweep.** Backward no longer runs one full derivative circuit per
+angle: `hqvit.adjoint_grads` sweeps back through the ansatz's 4D+1 layer segments once, taking each angle's
+gradient as Re⟨λ|(−i/2)P_j φ⟩ and stepping φ and λ back with CUDA-Q segment-inverse kernels; the input gradient
+(λ at the start) comes free. Exact (tested against the derivative circuits and the dense reference). qpp-cpu,
+8 threads under load: batch 4 backward 64 s → 3.2 s; batch 16 → 15 s. A second call layout
+(`hqvit.BATCHED_CALLS`: copy-indexed Paulis and stacked φ/λ, 2 calls per segment on larger registers) is 10×
+slower on CPU and kept for timing on the GPU, where per-call overhead may dominate. **Next GPU session:** time
+both layouts at batch 64 and pick per target.
+
 The circuit parameters θQ, θK, θV are opaque to PyTorch, so `quantum/bridge.py` supplies their gradients
 through a `torch.autograd.Function`.
 

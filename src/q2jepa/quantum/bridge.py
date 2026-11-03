@@ -75,8 +75,8 @@ def sample_shifted(
 class RegisterEvolve(torch.autograd.Function):
     """HQViT register evolution ψ = (I ⊗ W(θ)) x for a batch of amplitude-encoded clips (rows of x).
 
-    x: real (N, D) with D = tokens * 2**m; returns complex (N, D). Forward, the θ-gradient (one derivative circuit
-    per angle) and the input gradient (one inverse circuit) all run in CUDA-Q (quantum/hqvit.py).
+    x: real (N, D) with D = tokens * 2**m; returns complex (N, D). The forward circuit and the backward reverse
+    sweep (θ- and input gradients together, `hqvit.adjoint_grads`) all run in CUDA-Q (quantum/hqvit.py).
     """
 
     @staticmethod
@@ -86,6 +86,7 @@ class RegisterEvolve(torch.autograd.Function):
         ctx.save_for_backward(x, theta)
         ctx.m, ctx.depth = m, depth
         out = hqvit.evolve(_np(x), _np(theta), m, depth)
+        ctx.out = out  # the sweep starts from ψ, so backward needs no forward re-run
         return torch.as_tensor(out, device=x.device).to(
             torch.complex64 if x.dtype == torch.float32 else torch.complex128
         )
@@ -96,13 +97,7 @@ class RegisterEvolve(torch.autograd.Function):
 
         x, theta = ctx.saved_tensors
         g = grad.detach().resolve_conj().cpu().numpy()
-        gx = gt = None
-        if ctx.needs_input_grad[0]:
-            gx = torch.as_tensor(
-                np.real(hqvit.evolve_inv(g, _np(theta), ctx.m, ctx.depth)), dtype=x.dtype, device=x.device
-            )
-        if ctx.needs_input_grad[1]:
-            gt = torch.as_tensor(
-                hqvit.theta_grad(_np(x), g, _np(theta), ctx.m, ctx.depth), dtype=theta.dtype, device=theta.device
-            )
+        gt, lam = hqvit.adjoint_grads(ctx.out, g, _np(theta), ctx.m, ctx.depth)
+        gx = torch.as_tensor(np.real(lam), dtype=x.dtype, device=x.device) if ctx.needs_input_grad[0] else None
+        gt = torch.as_tensor(gt, dtype=theta.dtype, device=theta.device) if ctx.needs_input_grad[1] else None
         return gx, gt, None, None

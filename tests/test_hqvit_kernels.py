@@ -3,7 +3,7 @@ import pytest
 
 from q2jepa.quantum import is_fp32
 from q2jepa.quantum.attention import factored_acm, image_to_patches, n_ansatz_params, patch_states
-from q2jepa.quantum.hqvit import evolve, evolve_inv, theta_grad
+from q2jepa.quantum.hqvit import adjoint_grads, evolve, evolve_inv, theta_grad
 
 
 def _setup(seed=0, n=3, tokens=16, d=16):
@@ -94,3 +94,15 @@ def test_register_evolve_autograd_matches_dense_reference():
         f = lambda th: float(loss(RegisterEvolve.apply(x.detach(), torch.tensor(th), m, 2)))
         num.append((f(theta + eps * e) - f(theta - eps * e)) / (2 * eps))
     torch.testing.assert_close(t.grad, torch.tensor(num, dtype=torch.float64), atol=tol, rtol=tol)
+
+
+@pytest.mark.parametrize("batched", [False, True], ids=["per-qubit", "batched"])
+@pytest.mark.parametrize("m,depth", [(4, 2), (6, 2), (2, 1)])
+def test_adjoint_sweep_matches_derivative_circuits(m, depth, batched):
+    rng, x, _ = _setup(8, n=3, tokens=4, d=2**m)
+    theta = rng.uniform(-np.pi, np.pi, n_ansatz_params(m, depth))
+    g = rng.normal(size=x.shape) + 1j * rng.normal(size=x.shape)
+    grads, lam = adjoint_grads(evolve(x, theta, m, depth), g, theta, m, depth, batched=batched)
+    tol = 1e-3 if is_fp32() else 1e-8
+    np.testing.assert_allclose(grads, theta_grad(x, g, theta, m, depth), atol=tol * np.abs(g).sum(), rtol=tol)
+    np.testing.assert_allclose(lam, evolve_inv(g, theta, m, depth), atol=tol * 10, rtol=tol)
