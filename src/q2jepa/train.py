@@ -86,14 +86,14 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
     log = wandb.init(mode=cfg.wandb.mode, project=cfg.wandb.project, dir=str(out_dir),
                      config=OmegaConf.to_container(cfg, resolve=True))  # fmt: skip
     train_ds = StochasticMovingMNIST("train", cfg.dataset.root, n_obs=cfg.dataset.n_train)
-    res = cfg.encoder.res
+    res, norm = cfg.encoder.res, cfg.encoder.input_norm
 
     for it in range(start, t.iters + 1):
         _seed(cfg.seed, it)
         phase = stage(it, t.warmup_repr, t.warmup_pred)
         opt.param_groups[0]["lr"] = t.lr_enc if it <= t.warmup_repr else t.lr_enc_later
         obs, fut = _batch(train_ds, t.batch, device)
-        h, tgt = encoder(prepare(obs, res)), encoder(prepare(fut, res))
+        h, tgt = encoder(prepare(obs, res, norm)), encoder(prepare(fut, res, norm))
         loss = t.lambda_reg * (visreg(h, cfg.visreg, it) + visreg(tgt, cfg.visreg, it)) / 2
         if phase != "repr":
             z = prior.sample(h.detach(), t.k_train)
@@ -130,7 +130,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
             _seed(cfg.seed, READOUT_SEED_OFFSET + it)
             obs, fut = _batch(train_ds, r.batch, device)
             with torch.no_grad():
-                h, tgt = encoder(prepare(obs, res)), encoder(prepare(fut, res))
+                h, tgt = encoder(prepare(obs, res, norm)), encoder(prepare(fut, res, norm))
             rloss = readout_loss(render(obs[:, 2], readout(h, tgt)), fut)
             ropt.zero_grad(set_to_none=True)
             rloss.backward()
@@ -145,7 +145,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
     obs = test_obs[: cfg.eval.n_obs].to(device)
     k = cfg.eval.k_eval
     with torch.no_grad():
-        h = encoder(prepare(obs, res))
+        h = encoder(prepare(obs, res, norm))
         pred = predictor(h, prior.sample(h, k))  # (B, K, d)
         disp = readout(h.repeat_interleave(k, 0), pred.reshape(-1, pred.shape[-1])).reshape(len(obs), k, 3, 2)
     per_obs = [mmnist_metrics(d) for d in disp.cpu().double().numpy()]

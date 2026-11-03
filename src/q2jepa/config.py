@@ -10,6 +10,13 @@ class EncoderCfg:
     name: str = "cnn"
     res: int = 16  # encoder input resolution; data/readout/metrics stay 64x64
     d: int = 64
+    input_norm: str = "none"  # "l2": unit-RMS frames, what amplitude encoding keeps; use for fair HQViT comparisons
+    # vit / hqvit only (HQViT §5: 4x4 patches, L = 3 blocks, FFN hidden = patch dim)
+    patch: int = 4
+    depth: int = 3
+    ffn_hidden: int = 0  # 0 = patch * patch
+    pool: str = "mean"  # "mean" (HQViT, ignores patch positions) or "flatten"
+    pos_emb: bool = False
 
 
 @dataclass

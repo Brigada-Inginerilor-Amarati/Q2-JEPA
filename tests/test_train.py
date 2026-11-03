@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from hydra import compose, initialize_config_dir
 
 import q2jepa.config  # noqa: F401
@@ -32,9 +33,10 @@ def test_smoke_and_reproducible(tmp_path):
     assert json.loads((tmp_path / "a" / "metrics.json").read_text()) == m1
 
 
-def test_interrupted_run_resumes_to_same_metrics(tmp_path):
-    full = _cfg(["trainer.ckpt_every=2"])
-    part = _cfg(["trainer.ckpt_every=2", "trainer.stop_after=3"])
+@pytest.mark.parametrize("enc", [[], ["encoder=vit", "encoder.pool=flatten"]], ids=["cnn", "vit"])
+def test_interrupted_run_resumes_to_same_metrics(tmp_path, enc):
+    full = _cfg(["trainer.ckpt_every=2", *enc])
+    part = _cfg(["trainer.ckpt_every=2", "trainer.stop_after=3", *enc])
     ref = run(full, tmp_path / "ref")
     assert run(part, tmp_path / "res") == {} and (tmp_path / "res" / "ckpt.pt").exists()
     assert not (tmp_path / "res" / "metrics.json").exists()
