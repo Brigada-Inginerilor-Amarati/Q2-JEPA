@@ -4,6 +4,7 @@ import torch
 
 from q2jepa.data import hep18
 from q2jepa.data.hep18 import (
+    COLUMN,
     HEP18,
     INTERSECTION_HALF,
     SCHEDULE_A,
@@ -17,6 +18,8 @@ from q2jepa.data.hep18 import (
     future_index,
     future_schedules,
     generate,
+    render_agent_clip,
+    s_to_row,
     schedule_acc,
     to_xy,
 )
@@ -173,3 +176,46 @@ def test_item_is_float32_and_has_no_images(train):
 def test_unknown_split_raises():
     with pytest.raises(ValueError, match="split"):
         HEP18("val")
+
+
+def test_blob_centroid_tracks_s():
+    s = torch.linspace(-65.0, 49.25, 500)
+    clip = render_agent_clip(s[:, None].expand(-1, 3))[:, 0]
+    rows, cols = torch.meshgrid(torch.arange(64.0), torch.arange(64.0), indexing="ij")
+    total = clip.sum((-2, -1))
+    assert ((clip * rows).sum((-2, -1)) / total - s_to_row(s)).abs().max() < 0.05
+    assert ((clip * cols).sum((-2, -1)) / total - COLUMN).abs().max() < 0.05
+
+
+def test_car_moves_up_the_image():
+    assert s_to_row(torch.tensor(10.0)) < s_to_row(torch.tensor(0.0))
+
+
+def test_render_shape_dtype_range():
+    out = render_agent_clip(torch.zeros(4, 3, dtype=torch.float64))
+    assert out.shape == (4, 3, 64, 64) and out.dtype == torch.float32
+    assert out.min() >= 0 and out.max() <= 1
+    assert render_agent_clip(torch.zeros(18, 4, 3)).shape == (18, 4, 3, 64, 64)
+
+
+def test_half_metre_shift_changes_image():
+    s = torch.tensor([-10.0, 0.0, 10.0])
+    assert not torch.equal(render_agent_clip(s), render_agent_clip(s + 0.5))
+
+
+def test_frames_follow_their_own_position():
+    s = torch.tensor([-10.0, 0.0, 10.0])
+    moved = s.clone()
+    moved[1] += 5.0
+    a, b = render_agent_clip(s), render_agent_clip(moved)
+    assert torch.equal(a[0], b[0]) and torch.equal(a[2], b[2]) and not torch.equal(a[1], b[1])
+
+
+def test_batched_equals_per_sample():
+    s = torch.tensor([[-60.0, -50.0, -45.0], [-20.0, 0.0, 40.0]])
+    assert torch.equal(render_agent_clip(s), torch.stack([render_agent_clip(x) for x in s]))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU")
+def test_renderer_stays_on_input_device():
+    assert render_agent_clip(torch.zeros(3, device="cuda")).device.type == "cuda"

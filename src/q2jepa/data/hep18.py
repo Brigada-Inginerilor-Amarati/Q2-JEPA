@@ -39,6 +39,11 @@ _OBS_T = np.array([-2.0, -1.0, 0.0])
 _FUT_T = np.array([3.0, 6.0, 9.0])
 _CHECK_T = np.linspace(-2.0, 9.0, 221)  # 0.05 s
 
+# Positions span [-65, 49.25] m (section 4.3-4.4 bounds); padded by 3 sigma at sigma = 1.5 px. About 2.1 m/pixel.
+S_WINDOW = (-75.0, 60.0)
+SIGMA = 1.25  # px; provisional, final value set by the render check (dataset spec section 8)
+COLUMN = 31.5  # px; provisional, same check
+
 
 def schedule_acc(schedule, v0: np.ndarray) -> np.ndarray:
     """Accelerations (..., 3) in m/s^2 per stage; schedule (int or array) and v0 broadcast."""
@@ -100,6 +105,23 @@ def generate(n: int, seed: int) -> tuple[np.ndarray, np.ndarray, int]:
             resampled += 1
             v0[i], d0[i] = rng.uniform(8.0, 9.0, 4), rng.uniform(43.0, 47.0, 4)
     return d0, v0, resampled
+
+
+def s_to_row(s: torch.Tensor) -> torch.Tensor:
+    """Image row of longitudinal position s (m): row 0 is the top, so a car moves up the image."""
+    return (S_WINDOW[1] - s) / (S_WINDOW[1] - S_WINDOW[0]) * 63
+
+
+def render_agent_clip(s: torch.Tensor) -> torch.Tensor:
+    """Clip (..., 3, 64, 64) of one car from s (..., 3) in metres, on s's device.
+
+    World to pixel: row = s_to_row(s) on pixel centres 0..63, column fixed at COLUMN. Frame f is one Gaussian blob of
+    peak amplitude 1 at s[..., f], evaluated analytically, so sub-pixel position survives. Used for observations
+    (t = -2, -1, 0) and futures (t = 3, 6, 9) alike.
+    """
+    grid = torch.arange(64, dtype=torch.float32, device=s.device)
+    rows = (grid - s_to_row(s.float())[..., None]) ** 2
+    return torch.exp(-(rows[..., None] + (grid - COLUMN) ** 2) / (2 * SIGMA**2))
 
 
 class HEP18(Dataset):
