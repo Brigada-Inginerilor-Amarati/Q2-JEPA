@@ -1,8 +1,12 @@
+from collections import Counter
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
 
 from q2jepa.data.d3il import (
+    EXPECTED_SEGMENTS,
     GOAL_Y,
     INFLATION,
     REACH,
@@ -12,11 +16,23 @@ from q2jepa.data.d3il import (
     START_POINT,
     WINDOW_X,
     WINDOW_Y,
+    D3ILAvoiding,
+    _load,
+    demos,
+    first_observation,
+    make_folds,
     normalize,
     render_segment,
     route_label,
+    segments,
     start_point,
+    to_goal,
     to_pixels,
+)
+
+ROOT = Path(__file__).resolve().parents[1] / "data"
+needs_data = pytest.mark.skipif(
+    not (ROOT / "d3il/avoiding.npz").exists(), reason="data/d3il/avoiding.npz missing; run scripts/fetch_d3il.py"
 )
 
 
@@ -145,3 +161,178 @@ def test_constants_match_paper():
     assert [len(x) + 1 for x in ROW_OBSTACLE_X] == [2, 3, 4]
     assert len(ROW_RADIUS) == len(ROW_Y) == 3
     np.testing.assert_array_equal(start_point(), START_POINT)
+
+
+def _straight(length, n=200):
+    return np.stack([np.linspace(0, length, n), np.zeros(n)], -1)
+
+
+def test_segments_exclude_start_and_include_endpoint():
+    pts, lengths = segments(_straight(0.08))
+    assert pts.shape == (1, 24, 2)
+    np.testing.assert_allclose(pts[0, :, 0], 0.08 * np.arange(1, 25) / 24, atol=1e-9)
+    np.testing.assert_allclose(lengths, [0.08], atol=1e-9)
+
+
+def test_exact_multiple_has_no_empty_segment():
+    pts, lengths = segments(_straight(0.16))
+    assert pts.shape == (2, 24, 2)
+    np.testing.assert_allclose(lengths, [0.08, 0.08], atol=1e-9)
+
+
+def test_short_final_segment_keeps_true_length():
+    pts, lengths = segments(_straight(0.20))
+    assert pts.shape == (3, 24, 2)
+    np.testing.assert_allclose(lengths, [0.08, 0.08, 0.04], atol=1e-9)
+    np.testing.assert_allclose(pts[2, -1], [0.20, 0.0], atol=1e-9)
+
+
+def test_repeated_frames_stay_finite():
+    path = _straight(0.20, 50)
+    repeated = np.repeat(path, 3, axis=0)
+    pts, lengths = segments(repeated)
+    assert np.isfinite(pts).all()
+    np.testing.assert_allclose(pts, segments(path)[0], atol=1e-9)
+    np.testing.assert_allclose(lengths, segments(path)[1], atol=1e-9)
+
+
+def test_stationary_path_has_no_segments():
+    pts, lengths = segments(np.full((10, 2), 0.3))
+    assert pts.shape == (0, 24, 2) and lengths.shape == (0,)
+
+
+def test_first_observation_interpolates_frames_4_to_8():
+    path = np.stack([np.arange(20.0), np.zeros(20)], -1)
+    np.testing.assert_allclose(first_observation(path)[:, 0], np.linspace(3, 7, 24), atol=1e-9)
+
+
+def test_to_goal_cuts_at_first_crossing_with_interpolated_endpoint():
+    path = np.array([[0.0, 0.0], [0.0, GOAL_Y - 0.1], [0.2, GOAL_Y + 0.1], [0.0, GOAL_Y - 0.1], [0.2, GOAL_Y + 0.2]])
+    np.testing.assert_allclose(to_goal(path), [[0.0, 0.0], [0.0, GOAL_Y - 0.1], [0.1, GOAL_Y]], atol=1e-9)
+
+
+def test_to_goal_leaves_a_path_that_never_arrives():
+    path = np.array([[0.0, 0.0], [0.0, 0.1]])
+    np.testing.assert_array_equal(to_goal(path), path)
+
+
+def _routes():
+    counts = [3, *[4] * 22, 5]
+    return np.repeat(np.arange(24), counts)
+
+
+def test_make_folds_is_stratified_partition():
+    routes = _routes()
+    folds = make_folds(routes, 0)
+    assert np.bincount(folds).tolist() == [32, 32, 32]
+    for r in range(24):
+        per_fold = np.bincount(folds[routes == r], minlength=3)
+        assert per_fold.max() - per_fold.min() <= 1
+    np.testing.assert_array_equal(folds, make_folds(routes, 0))
+    assert not np.array_equal(folds, make_folds(routes, 1))
+
+
+def test_missing_npz_raises_with_fetch_hint(tmp_path):
+    with pytest.raises(FileNotFoundError, match="fetch_d3il"):
+        D3ILAvoiding("train", 0, root=str(tmp_path))
+
+
+def test_dev_split_raises(tmp_path):
+    with pytest.raises(ValueError, match="dev"):
+        D3ILAvoiding("dev", 0, root=str(tmp_path))
+
+
+def test_fold_out_of_range_raises(tmp_path):
+    with pytest.raises(ValueError, match="fold"):
+        D3ILAvoiding("train", 3, root=str(tmp_path))
+
+
+@pytest.fixture(scope="module")
+def all_items():
+    train, test = D3ILAvoiding("train", 0), D3ILAvoiding("test", 0)
+    return [x[i] for x in (train, test) for i in range(len(x))]
+
+
+@needs_data
+def test_96_demos_common_start():
+    paths = demos(0, "train") + demos(0, "test")
+    assert len(paths) == 96
+    np.testing.assert_allclose([p[0] for p in paths], np.tile(START_POINT, (96, 1)), atol=1e-6)
+
+
+@needs_data
+def test_segment_count(all_items):
+    assert len(all_items) == EXPECTED_SEGMENTS
+
+
+@needs_data
+def test_non_final_arc_length_along_the_recording():
+    for path in _load(str(ROOT))[0]:
+        recording = to_goal(path)[7:]
+        pts, lengths = segments(recording)
+        np.testing.assert_allclose(lengths[:-1], 0.08, rtol=1e-3)
+        steps = np.linalg.norm(np.diff(recording, axis=0), axis=1)
+        arc = np.concatenate([[0.0], np.cumsum(steps)])
+        at = 0.08 * np.arange(1, len(pts))
+        ends = np.stack([np.interp(at, arc, recording[:, axis]) for axis in range(2)], -1)
+        np.testing.assert_allclose(pts[:-1, -1], ends, atol=1e-9)
+
+
+@needs_data
+def test_resampled_polyline_only_cuts_corners(all_items):
+    for item in all_items:
+        if item["fut_len"] < 0.0799:  # final segment
+            continue
+        points = torch.cat([item["obs_pts"][-1:], item["fut_pts"]]).double() * 0.4
+        length = (points[1:] - points[:-1]).norm(dim=-1).sum().item()
+        assert 0.08 * 0.98 < length < 0.08 * 1.001
+
+
+@needs_data
+def test_route_distribution(all_items):
+    routes = {(int(x["demo_id"]), int(x["route"])) for x in all_items}
+    assert sorted(Counter(r for _, r in routes).values()) == [3, *[4] * 22, 5]
+
+
+@needs_data
+def test_folds_disjoint_and_complete():
+    ids = []
+    for fold in range(3):
+        train = {int(x["demo_id"]) for x in D3ILAvoiding("train", fold)}
+        test = {int(x["demo_id"]) for x in D3ILAvoiding("test", fold)}
+        assert (len(train), len(test)) == (64, 32) and not train & test
+        ids += test
+    assert sorted(ids) == list(range(96))
+
+
+@needs_data
+def test_observation_is_preceding_segment():
+    ds = D3ILAvoiding("train", 0)
+    for prev, item in zip(ds, list(ds)[1:], strict=False):
+        if item["seg_idx"] > 0:
+            assert torch.equal(item["obs_pts"], prev["fut_pts"])
+
+
+@needs_data
+def test_first_item_observation_is_interpolated_frames():
+    paths, _ = _load(str(ROOT))
+    ds = D3ILAvoiding("train", 0)
+    first = next(x for x in ds if x["seg_idx"] == 0)
+    expected = normalize(first_observation(paths[int(first["demo_id"])]))
+    np.testing.assert_allclose(first["obs_pts"].numpy(), expected, atol=1e-5)
+
+
+@needs_data
+def test_every_demo_fits_the_window():
+    points = normalize(np.concatenate(demos(0, "train") + demos(0, "test")))
+    assert points[:, 0].min() >= WINDOW_X[0] and points[:, 0].max() <= WINDOW_X[1]
+    assert points[:, 1].min() >= WINDOW_Y[0] and points[:, 1].max() <= WINDOW_Y[1]
+
+
+@needs_data
+def test_item_keys_and_shapes():
+    item = D3ILAvoiding("train", 0)[0]
+    assert set(item) == {"obs_pts", "fut_pts", "fut_len", "demo_id", "seg_idx", "route"}
+    assert item["obs_pts"].shape == item["fut_pts"].shape == (24, 2)
+    assert item["obs_pts"].dtype == item["fut_pts"].dtype == torch.float32
+    assert all(item[k].shape == () for k in ("fut_len", "demo_id", "seg_idx", "route"))

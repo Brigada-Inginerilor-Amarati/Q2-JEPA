@@ -307,3 +307,13 @@ Corrections and defaults made in review, open to challenge:
    first observation uses 1-indexed frames, uniform in frame index (§5.3). The readout owner should check this.
 10. Licence and camera reports don't block building; the licence blocks only reporting D3IL results and sharing the
     `.npz` (§5.1).
+
+Found in the real D3IL data, decided during implementation:
+11. The position field is `c_pos`: its 96 starts have zero spread and lie within 4e-9 m of App. B.4's point, while
+    `des_c_pos` spreads by 8.8 mm. It also gives the paper's 24 routes with the 22×4 + 3 + 5 distribution.
+12. Paths are **cut at the first goal-line crossing**, with an interpolated endpoint. App. B.1 doesn't mention this, but
+    recordings run on to y = 0.488 m and, uncut, give 1,161 segments and leave the render window. Cut, they give
+    **1,029 segments** against the paper's 1,030, and fit the window (x 0.224–0.771 m, y up to 0.35 m).
+13. Arc length is checked along the recording (§6): non-final segments are exact to 1e-9 m there. The polyline through
+    the 24 resampled points cuts corners of the 1.4 cm frame steps and runs up to 1.9% short, so the 1e-3 tolerance
+    cannot hold on it; the test bounds that shortfall at 2% instead.
