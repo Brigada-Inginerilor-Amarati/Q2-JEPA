@@ -3,14 +3,30 @@
 Each frame is encoded separately (HQViT amplitude-encodes one image per circuit) and fused after pooling.
 Patch layout matches quantum/attention.py: patch i row-major over the grid, pixel l row-major in the patch.
 
-With pool="mean" and pos_emb=False the encoder is invariant to permuting patches, exactly like HQViT's
-I_idx ⊗ W ansatz followed by mean pooling; pool="flatten" or pos_emb=True restore patch positions.
+With pool="mean" and pos_emb="none" the encoder is invariant to permuting patches, exactly like HQViT's
+I_idx ⊗ W ansatz followed by mean pooling; pool="flatten" or a positional embedding restore patch positions.
+The embedding is added to the pixel tokens before block 1, so HQViT amplitude-encodes the same tokens.
 """
 
 import math
 
 import torch
 from torch import nn
+
+
+def sincos_2d(grid: int, dim: int) -> torch.Tensor:
+    """Fixed 2-D sinusoidal embedding (grid*grid, dim), row-major token order; half the channels per axis."""
+    if dim % 4:
+        raise ValueError(f"sincos embedding needs dim divisible by 4, got {dim}")
+    q = dim // 4
+    omega = 1.0 / 10000 ** (torch.arange(q) / q)
+    rows, cols = torch.meshgrid(torch.arange(grid), torch.arange(grid), indexing="ij")
+
+    def enc(pos: torch.Tensor) -> torch.Tensor:
+        a = pos.reshape(-1, 1).float() * omega
+        return torch.cat([a.sin(), a.cos()], 1)
+
+    return torch.cat([enc(rows), enc(cols)], 1)
 
 
 def to_patches(x: torch.Tensor, p: int) -> torch.Tensor:
@@ -47,7 +63,7 @@ class ViTEncoder(nn.Module):
         depth: int = 3,
         ffn_hidden: int | None = None,
         pool: str = "mean",
-        pos_emb: bool = False,
+        pos_emb: str = "none",
         frames: int = 3,
     ):
         super().__init__()
@@ -57,7 +73,14 @@ class ViTEncoder(nn.Module):
             raise ValueError(f"res {res} is not a multiple of patch {patch}")
         self.patch, self.pool = patch, pool
         tokens, dim = (res // patch) ** 2, patch * patch
-        self.pos = nn.Parameter(torch.zeros(tokens, dim)) if pos_emb else None
+        if pos_emb == "sincos":
+            self.register_buffer("pos", sincos_2d(res // patch, dim))
+        elif pos_emb == "learned":
+            self.pos = nn.Parameter(torch.zeros(tokens, dim))
+        elif pos_emb == "none":
+            self.pos = None
+        else:
+            raise ValueError(f"unknown pos_emb {pos_emb!r}")
         self.blocks = nn.ModuleList(Block(dim, ffn_hidden or dim) for _ in range(depth))
         per_frame = dim if pool == "mean" else tokens * dim
         # Temporal fusion: same head widths as the CNN encoder (Q-JEPA App. A.2).

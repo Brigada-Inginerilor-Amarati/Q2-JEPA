@@ -16,7 +16,7 @@ class EncoderCfg:
     depth: int = 3
     ffn_hidden: int = 0  # 0 = patch * patch
     pool: str = "mean"  # "mean" (HQViT, ignores patch positions) or "flatten"
-    pos_emb: bool = False
+    pos_emb: str = "none"  # "none" (HQViT paper), "sincos" (fixed 2-D), "learned"
 
 
 @dataclass
@@ -82,6 +82,7 @@ class ReadoutCfg:
 class EvalCfg:
     n_obs: int = 80
     k_eval: int = 128
+    split: str = "test"  # "dev" for tuning/selection (phase-2 F5); writes metrics_dev.json instead of metrics.json
 
 
 @dataclass

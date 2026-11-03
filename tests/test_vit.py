@@ -24,10 +24,10 @@ def test_to_patches_matches_quantum_layout():
         np.testing.assert_array_equal(to_patches(torch.from_numpy(x), 4).numpy(), image_to_patches(x, 4))
 
 
-@pytest.mark.parametrize("res", [16, 32])
+@pytest.mark.parametrize("res,patch", [(16, 4), (32, 4), (64, 8)])
 @pytest.mark.parametrize("pool", ["mean", "flatten"])
-def test_vit_shapes(res, pool):
-    enc = ViTEncoder(res, pool=pool)
+def test_vit_shapes(res, patch, pool):
+    enc = ViTEncoder(res, patch=patch, pool=pool, pos_emb="sincos")
     assert enc(torch.rand(5, 3, res, res)).shape == (5, 64)
 
 
@@ -35,16 +35,16 @@ def test_mean_pool_without_positions_ignores_patch_layout():
     # The HQViT design (I_idx ⊗ W ansatz + mean pool) has this property; the twin must reproduce it.
     torch.manual_seed(0)
     x, perm = torch.rand(2, 3, 16, 16), torch.randperm(16)
-    enc = ViTEncoder(16, pool="mean", pos_emb=False).eval()
+    enc = ViTEncoder(16, pool="mean", pos_emb="none").eval()
     torch.testing.assert_close(enc(_permute_patches(x, perm)), enc(x))
 
 
-@pytest.mark.parametrize("kwargs", [{"pool": "flatten"}, {"pos_emb": True}])
+@pytest.mark.parametrize("kwargs", [{"pool": "flatten"}, {"pos_emb": "learned"}, {"pos_emb": "sincos"}])
 def test_positional_variants_see_patch_layout(kwargs):
     torch.manual_seed(0)
     x, perm = torch.rand(2, 3, 16, 16), torch.randperm(16)
     enc = ViTEncoder(16, **kwargs).eval()
-    if kwargs.get("pos_emb"):
+    if kwargs.get("pos_emb") == "learned":
         torch.nn.init.normal_(enc.pos, std=1.0)  # zero init would hide the embedding
     assert not torch.allclose(enc(_permute_patches(x, perm)), enc(x))
 
@@ -63,8 +63,15 @@ def test_ffn_hidden_defaults_to_patch_dim_and_res_checked():
         ViTEncoder(18, patch=4)
 
 
+def test_sincos_is_fixed_and_distinct_per_token():
+    enc = ViTEncoder(64, patch=8, pos_emb="sincos")
+    assert enc.pos.shape == (64, 64) and not enc.pos.requires_grad
+    assert "pos" not in dict(enc.named_parameters())
+    assert torch.cdist(enc.pos, enc.pos).add(torch.eye(64)).min() > 0  # every patch position is distinguishable
+
+
 def test_build_vit():
     from types import SimpleNamespace
 
-    cfg = SimpleNamespace(name="vit", res=16, d=64, patch=4, depth=3, ffn_hidden=0, pool="mean", pos_emb=False)
+    cfg = SimpleNamespace(name="vit", res=16, d=64, patch=4, depth=3, ffn_hidden=0, pool="mean", pos_emb="none")
     assert isinstance(build_encoder(cfg), ViTEncoder)

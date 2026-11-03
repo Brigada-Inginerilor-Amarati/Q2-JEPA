@@ -53,6 +53,15 @@ def _save(obj: dict, path: Path) -> None:
     os.replace(tmp, path)
 
 
+def _identity(cfg) -> str:
+    """Everything that defines the trained model; resume and re-evaluation must match it."""
+    trainer = {k: v for k, v in OmegaConf.to_container(cfg.trainer, resolve=True).items()
+               if k not in ("stop_after", "ckpt_every", "device")}  # fmt: skip
+    keys = ("seed", "encoder", "prior", "predictor", "quantum", "visreg", "readout", "dataset")
+    parts = {k: OmegaConf.to_container(cfg[k], resolve=True) if k != "seed" else cfg.seed for k in keys}
+    return json.dumps({**parts, "trainer": trainer}, sort_keys=True)
+
+
 def run(cfg, out_dir: Path) -> dict[str, float]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -72,16 +81,27 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
     )
 
     ckpt_path = out_dir / "ckpt.pt"
+    identity = _identity(cfg)
     start = 1
     if ckpt_path.exists():
         ck = torch.load(ckpt_path, map_location=device, weights_only=True)
+        if ck.get("identity", identity) != identity:  # pre-phase-2 checkpoints have no identity; accept them
+            raise ValueError(f"{ckpt_path} was trained with a different model/training config; use a new run dir")
         for name, (module, _) in groups.items():
             module.load_state_dict(ck[name])
         opt.load_state_dict(ck["opt"])
         start = ck["it"] + 1
 
     def checkpoint(it: int) -> None:
-        _save({**{n: m.state_dict() for n, (m, _) in groups.items()}, "opt": opt.state_dict(), "it": it}, ckpt_path)
+        _save(
+            {
+                **{n: m.state_dict() for n, (m, _) in groups.items()},
+                "opt": opt.state_dict(),
+                "it": it,
+                "identity": identity,
+            },
+            ckpt_path,
+        )
 
     log = wandb.init(mode=cfg.wandb.mode, project=cfg.wandb.project, dir=str(out_dir),
                      config=OmegaConf.to_container(cfg, resolve=True))  # fmt: skip
@@ -141,8 +161,12 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
         _save(readout.state_dict(), readout_path)
 
     _seed(cfg.seed, EVAL_SEED_OFFSET)
-    test_obs = StochasticMovingMNIST("test", cfg.dataset.root, n_obs=cfg.dataset.n_test).unique_obs()
-    obs = test_obs[: cfg.eval.n_obs].to(device)
+    split = cfg.eval.split
+    if split not in ("test", "dev"):
+        raise ValueError(f"unknown eval split {split!r}")
+    n_split = cfg.dataset.n_test if split == "test" else cfg.dataset.n_dev
+    eval_obs = StochasticMovingMNIST(split, cfg.dataset.root, n_obs=n_split).unique_obs()
+    obs = eval_obs[: cfg.eval.n_obs].to(device)
     k = cfg.eval.k_eval
     with torch.no_grad():
         h = encoder(prepare(obs, res, norm))
@@ -150,7 +174,11 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
         disp = readout(h.repeat_interleave(k, 0), pred.reshape(-1, pred.shape[-1])).reshape(len(obs), k, 3, 2)
     per_obs = [mmnist_metrics(d) for d in disp.cpu().double().numpy()]
     metrics = {key: float(np.mean([m[key] for m in per_obs])) for key in per_obs[0]}
-    (out_dir / "metrics.json").write_text(json.dumps(metrics, sort_keys=True, indent=2))
+    # Keep each split's provenance next to its metrics: re-evaluating via the CLI overwrites .hydra/.
+    (out_dir / f"eval_config_{split}.yaml").write_text(OmegaConf.to_yaml(cfg, resolve=True))
+    (out_dir / ("metrics.json" if split == "test" else f"metrics_{split}.json")).write_text(
+        json.dumps(metrics, sort_keys=True, indent=2)
+    )
     log.log(metrics)
     log.finish()
     return metrics

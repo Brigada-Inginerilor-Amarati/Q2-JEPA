@@ -29,7 +29,7 @@ The README describes the target. What actually exists today:
 |---|---|
 | Stochastic MovingMNIST (`data/mmnist.py`) | done |
 | CNN encoder (`encoder/cnn.py`, `encoder=cnn`) | done |
-| Classical ViT twin of HQViT (`encoder/vit.py`, `encoder=vit`) | done; positional setting under test (phase-2 spec §5.3) |
+| Classical ViT twin of HQViT (`encoder/vit.py`, `encoder=vit`) | done; defaults 8×8 patches + sinusoidal positions; learning rate under test (phase-2 spec §5.3) |
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
 | Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | kernels only, not wired into an encoder |
@@ -37,6 +37,7 @@ The README describes the target. What actually exists today:
 | HQViT encoder (`encoder/hqvit.py`, `conf/encoder/hqvit.yaml`) | **not built** |
 | QCBM prior + param-shift gradients (`quantum/bridge.py`, `conf/prior/*qcbm*.yaml`) | **not built** |
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
+| Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
 | Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
 | HEP18 and D3IL as rendered images (`data/`, `readout/`, `conf/dataset/`) | **not built** |
 
@@ -56,10 +57,12 @@ From the spec; breaking any of these makes results invalid even if the code runs
   Only the component under test changes between compared rows.
 - HQViT claims are made against the classical twin (`encoder=vit`) with the same patching, blocks, FFN,
   positional handling, pooling and fusion; the CNN is an anchor, not the headline baseline.
-- Every encoder in the grid, CNN included, sees the same downsampled input (`encoder.res`) with the same
-  `encoder.input_norm` (`l2` whenever HQViT is compared — use `+experiment=phase2`); data, readout and metrics stay at native
+- Every encoder in the grid, CNN included, sees the same input resolution (`encoder.res`) with the same
+  `encoder.input_norm` (`l2` whenever HQViT is compared — `+experiment=phase2` sets that and native 64×64); data, readout and metrics stay at native
   resolution / state space (64×64 for MovingMNIST; metres and routes for HEP18 and D3IL).
 - All rows of one comparison table run on the same platform; numbers differ across machines.
+- Tuning and model selection use `eval.split=dev` (the `+tune=s1|s2|s3` presets set it); the test split is
+  evaluated once per final checkpoint. ViT/HQViT rows always use `+experiment=phase2` (without it `res` is 16).
 - Every reported number must be regenerable from config overrides + seed + commit SHA. No manual
   notebook tweaks: change config or code, not the notebook.
 - A new benchmark = a `data/` module + a `readout/` module + `conf/dataset/*.yaml` + metrics. Never a

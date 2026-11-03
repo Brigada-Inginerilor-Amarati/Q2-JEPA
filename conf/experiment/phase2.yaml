@@ -1,5 +1,6 @@
 # @package _global_
-# Phase-2 comparison preset (phase-2 spec §4, F2): every encoder sees unit-RMS frames, as HQViT does.
+# Phase-2 comparison preset (phase-2 spec §4, F2): every encoder sees native 64x64 unit-RMS frames, as HQViT does.
 # Use for every grid row: python -m q2jepa.train +experiment=phase2 encoder=<cnn|vit|hqvit> ...
 encoder:
+  res: 64
   input_norm: l2

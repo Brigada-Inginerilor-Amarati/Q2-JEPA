@@ -11,7 +11,7 @@ CONF = str(Path(__file__).resolve().parents[1] / "conf")
 TINY = [
     "trainer.iters=6", "trainer.warmup_repr=2", "trainer.warmup_pred=4", "trainer.batch=8", "trainer.k_train=4",
     "readout.iters=2", "readout.batch=8", "eval.n_obs=2", "eval.k_eval=8",
-    "dataset.n_train=2", "dataset.n_test=2", "wandb.mode=disabled",
+    "dataset.n_train=2", "dataset.n_test=2", "dataset.n_dev=2", "wandb.mode=disabled",
 ]  # fmt: skip
 
 
@@ -31,6 +31,26 @@ def test_smoke_and_reproducible(tmp_path):
     assert set(m1) >= {"coverage", "validity", "tv", "min_ade", "es"}
     assert (tmp_path / "a" / "metrics.json").read_text() == (tmp_path / "b" / "metrics.json").read_text()
     assert json.loads((tmp_path / "a" / "metrics.json").read_text()) == m1
+
+
+def test_dev_split_eval_reuses_checkpoint(tmp_path):
+    test = run(_cfg(), tmp_path)
+    dev = run(_cfg(["eval.split=dev"]), tmp_path)  # finished run: only re-evaluates
+    assert (tmp_path / "metrics_dev.json").exists() and dev != test
+    assert json.loads((tmp_path / "metrics.json").read_text()) == test
+    assert "split: dev" in (tmp_path / "eval_config_dev.yaml").read_text()
+
+
+def test_resume_rejects_different_model(tmp_path):
+    run(_cfg(), tmp_path)
+    with pytest.raises(ValueError, match="different model"):
+        run(_cfg(["trainer.iters=8"]), tmp_path)
+
+
+def test_tune_presets_select_on_dev():
+    for s, lrs in {"s1": (3e-4, 1e-5), "s2": (3e-4, 3e-4), "s3": (1e-3, 1e-4)}.items():
+        c = _cfg(["+experiment=phase2", f"+tune={s}", "encoder=vit"])
+        assert (c.trainer.lr_enc, c.trainer.lr_enc_later, c.eval.split, c.encoder.res) == (*lrs, "dev", 64)
 
 
 @pytest.mark.parametrize("enc", [[], ["encoder=vit", "encoder.pool=flatten"]], ids=["cnn", "vit"])

@@ -25,6 +25,10 @@ quantum component is not a result.
 | Headline encoder comparison is HQViT vs a classical ViT twin; the CNN is an anchor to the paper | team | kickstart §4 grid |
 | HQViT positional handling is changed from the paper (§5.3) | me, pending twin experiment | — |
 | Reproducibility is guaranteed per platform, not across platforms (§4, rule F9) | me | clarifies kickstart §2 |
+| **Native 64×64 input, 8×8 patches** for every encoder and benchmark (§5.5) | team | kickstart §6 resolution (16/32, 64 out of scope) |
+| **Fixed 2-D sinusoidal positional embedding** in HQViT and twin; paper-faithful variant kept as an ablation row (§5.3) | team | HQViT §4 |
+| **Equal small tuning budget**: 3 encoder learning-rate schedules per encoder, dev split (F5) | team | — |
+| Architecture-matched twin; parameter counts reported, not matched (F8) | me, team to confirm | — |
 
 ## 3. What adapting HEP18 and D3IL to images means
 
@@ -54,14 +58,20 @@ These rules apply to every comparison we report. Rules marked **(hard)** are add
   same. The CNN stacks frames as channels (early fusion); this difference is stated next to every CNN row.
 - **F4 (hard) — HQViT claims are made against the twin.** The twin (`encoder=vit`) shares HQViT's patching,
   block count, FFN, positional handling, pooling and fusion head; only `Block.attend` differs.
-- **F5 — Equal tuning budget, dev split only.** Every encoder and prior gets the same number of tuning runs,
-  selected on the dev split. The test split is touched once per final checkpoint.
+- **F5 — Equal tuning budget, dev split only.** Every encoder gets the same 3 encoder learning-rate
+  schedules, fixed before any run as presets `conf/tune/s{1,2,3}.yaml` (`lr_enc` → `lr_enc_later`: s1 3e-4 → 1e-5,
+  the paper's; s2 3e-4 → 3e-4; s3 1e-3 → 1e-4). The presets set `eval.split=dev`. One seed each; the schedule
+  with the best dev coverage (ties: TV) wins per encoder. Everything else stays at Q-JEPA Table 5.
+  The test split is touched once per final checkpoint.
 - **F6 — Paired seeds, at least 3.** Seeds 0–2 for every row; compare per seed as well as mean ± sample s.d.
   If the gap between two rows is within one s.d., add seeds 3–4 before drawing a conclusion. (Measured
   spread for the CNN at 16×16: ±3.1 coverage points, ±0.029 TV over 3 seeds.)
 - **F7 — Same steps, not same wall-clock.** Iteration counts follow Q-JEPA Table 5. Wall-clock, circuit
   evaluations and shots are reported separately as the HPC result.
 - **F8 — Report sizes.** Every results row lists trainable parameters split into quantum and classical.
+  The twin is matched on architecture, not on parameter count: at 64×64/8×8, HQViT's Q/K/V are ~380 circuit
+  angles where the twin's are ~37k linear weights. A parity result is therefore "with fewer parameters". If
+  HQViT lands between the twin and the position-blind ablation, add a reduced-attention twin row.
 - **F9 (hard) — One platform per comparison.** The same overrides, seed and SHA give different numbers on
   different hardware (seed 0, 16×16 CNN: 95.8% validity on the Mac, 95.2% on Linux). All rows of one
   comparison table run on the same platform (e.g. all on Colab T4), which is recorded in the row.
@@ -78,8 +88,8 @@ All three implement `forward(x: (B, 3, res, res)) -> (B, 64)` and are built by `
 Q-JEPA App. A.2. Frames stacked as channels. Used with `input_norm=l2` in all phase-2 grid rows.
 
 ### 5.2 Classical ViT twin (`encoder=vit`, built 2026-11-03)
-`src/q2jepa/encoder/vit.py`. 4×4 patches (16 tokens of dimension 16 at 16×16), `depth=3` single-head post-norm
-blocks, FFN hidden 16 (HQViT §5), each frame encoded separately, then pooled and fused by the CNN's head widths
+`src/q2jepa/encoder/vit.py`. 8×8 patches at 64×64 (64 tokens of dimension 64; §5.5), `depth=3` single-head
+post-norm blocks, FFN hidden = patch dim (HQViT §5), fixed sinusoidal positions (§5.3), each frame encoded separately, then pooled and fused by the CNN's head widths
 (·→96→64, LayerNorm). Patch layout matches `quantum/attention.py` exactly, so HQViT can reuse `to_patches`.
 
 ### 5.3 Positional information (deviation from HQViT)
@@ -92,12 +102,20 @@ Options, applied identically to HQViT and the twin:
 
 | `encoder.pool` / `encoder.pos_emb` | Effect | Keeps factored path |
 |---|---|---|
-| `mean` / `false` | paper-faithful, position-blind | yes |
-| `flatten` / `false` | concatenate tokens before the head | yes |
-| `mean` / `true` | learned positional embedding added to tokens before block 1 | yes |
+| `mean` / `none` | paper-faithful, position-blind — **ablation row** | yes |
+| `flatten` / `none` | concatenate tokens before the head (1.25M-parameter head at 64×64) | yes |
+| `mean` / `learned` | learned embedding added to tokens before block 1 | yes |
+| **`mean` / `sincos`** | **fixed 2-D sinusoidal embedding added to tokens before block 1 — adopted** | yes |
 | non-identity ansatz on index qubits | quantum positional mixing | **no** — rejected |
 
-**Decision rule:** the twin is trained with all settings on MovingMNIST (seed 0, then 3 seeds for the
+**Decision (team, 2026-11-03):** `pool=mean`, `pos_emb=sincos` for both encoders. It needs no training (the
+zero-initialized learned embedding barely moved, see below), adds no parameters, and keeps the head small.
+For HQViT the embedding is added to the pixel tokens before amplitude encoding, so empty patches are no longer
+skipped: every block simulates all 64 patch circuits per frame. The paper-faithful `pos_emb=none` variant is
+reported as an ablation row with every other setting identical. `sincos` was adopted on reasoning, not on a
+run: the ablation row is its check, and if it doesn't beat `none` for the twin the decision is revisited.
+
+**Original decision rule:** the twin is trained with all settings on MovingMNIST (seed 0, then 3 seeds for the
 two best). We adopt the best setting for both encoders and also report the paper-faithful one as an
 ablation. Reportable reruns go to `docs/results/` with overrides, seed, SHA, platform and parameter counts.
 
@@ -113,10 +131,11 @@ on top of 4b7fe38, Linux CPU; not reportable):
 
 The position-blind design collapses as predicted. A zero-initialized learned embedding barely moves: the
 encoder learning rate drops to 1e-5 after iteration 200. Flattening helps but the twin stays far below the
-CNN. Next: a fixed 2-D sinusoidal embedding (no learning needed), readout-only diagnostics to locate the loss
+CNN. Next (superseded by the decision above): a fixed 2-D sinusoidal embedding (no learning needed), readout-only diagnostics to locate the loss
 of information, and a twin learning-rate check under F5's equal tuning budget.
 
 ### 5.4 HQViT (`encoder=hqvit`, not built)
+Defaults match the twin (`conf/encoder/hqvit.yaml`): 8×8 patches, `pos_emb=sincos`, `pool=mean`, `l2` input.
 Reuses the twin's skeleton; replaces `Block.attend` with:
 1. amplitude-encode the block's input tokens (whole-image normalization, HQViT Eq. 5);
 2. Q and K patch states from `quantum/attention.py` (factored mode), A_ij = w_i w_j |⟨q̂_i|k̂_j⟩|²;
@@ -124,6 +143,23 @@ Reuses the twin's skeleton; replaces `Block.attend` with:
 4. softmax(A)·V, then the twin's residual, FFN and LayerNorm.
 Between blocks, token outputs are re-encoded into amplitudes (HQViT §6 notes this conversion cost).
 The full 17-qubit mode stays an equivalence test and benchmark only (kickstart §6).
+
+### 5.5 Resolution: native 64×64 with 8×8 patches
+
+All encoders see 64×64 input (`+experiment=phase2` sets `encoder.res=64`); nothing is downsampled.
+
+| | 16×16 / 4×4 | 32×32 / 4×4 | **64×64 / 8×8** |
+|---|---|---|---|
+| Qubits per register (index + pixel) | 4 + 4 | 6 + 4 | **6 + 6** |
+| Patch circuits per frame per register | 16 × 4q | 64 × 4q | **64 × 6q** |
+| Attention matrix | 16² | 64² | **64²** |
+| Angles per Q/K/V circuit (D=2) | 28 | 28 | **42** |
+| Full swap-test circuit (benchmark only) | 17q | 21q | **25q** |
+
+64×64/8×8 costs about the same as 32×32/4×4 and has the same spatial attention granularity (a patch is 1/8 of
+the image side), but keeps every native pixel and makes the 64×64 CNN — the Q-JEPA paper's own setting — the
+anchor. Deviation from HQViT, which stops at 32×32; documented here and applied to the twin. Exploratory
+seed-0 CPU runs at 3a46ffb: CNN coverage 86.4 (16×16) → 90.3 (32×32).
 
 ## 6. HQViT gradients through CUDA-Q
 
@@ -137,7 +173,7 @@ through a `torch.autograd.Function`.
 | C. CUDA-Q builds the ansatz matrix once per step, torch applies it to all patches | ~57 small circuits per step, batch-independent | **rejected**: per-patch evolution would leave CUDA-Q and gut the HPC story |
 
 Gate before building HQViT: time one forward pass (and one option-B backward pass) for a batch of 64 at
-16×16 on a Colab T4, against the expected budget of 4,000 iterations × 2 branches × 3 frames. If it doesn't
+64×64 with 8×8 patches on a Colab T4, against the expected budget of 4,000 iterations × 2 branches × 3 frames. If it doesn't
 fit, the fallbacks are, in order: batching patch circuits inside one CUDA-Q call (`cudaq.get_state` over
 argument lists, or `nvidia-mqpu`), fewer blocks, then a smaller batch — never option C.
 
@@ -186,8 +222,13 @@ already generated) for selection.
 - **Rendering (new).** One image clip **per car**, rendered top-down with only that car drawn: observation
   frames at −2, −1, 0 s, target frames at 3, 6, 9 s. This preserves the paper's per-agent encoder exactly (each
   car's encoder sees only its own motion) and yields 4 × 16-d agent representations concatenated to d=64.
-  Cars are drawn as anti-aliased Gaussian blobs so sub-pixel position survives downsampling. Open: crop, blob
-  width and `encoder.res` (16 vs 32); decided by the readout-only diagnostic of the CNN.
+  Rendered natively at 64×64 (~1.9 m per pixel over the ~120 m intersection). Cars are anti-aliased Gaussian
+  blobs, so sub-pixel position (needed for 1 m/s speed accuracy across 1 s frames) is kept. Open: crop and blob
+  width; decided by the readout-only diagnostic of the CNN.
+- **HQViT cost flag.** 18 target views × 4 cars × 3 frames per observation make target encoding ~36× the
+  MovingMNIST frame count per step. If the T4 timing doesn't fit, encode a fixed random subset of target views
+  per step for VISReg (detached targets for the energy term are cheaper). Whatever is chosen applies to every
+  encoder.
 - **Model differences from MovingMNIST** (paper, unchanged): agent-local bits (3 per car, other cars' bits
   masked), residual predictor without output norm, smoothed power distance ρ (β=0.5, ε=1e-4) for training,
   change regularization λΔ R(t−h) with λΔ = 2/3, 6,000 iterations, batch 32, readout 16,000 × 128, b/B 8/32,
@@ -209,8 +250,8 @@ already generated) for selection.
 - **Rendering (new).** A 24-point segment becomes a 3-frame clip, points 1–8, 9–16, 17–24, drawn as
   anti-aliased polylines in fixed workspace coordinates (obstacle positions matter, so no agent-centric crop).
   Splitting into frames keeps the direction of travel, which a single polyline image would lose. The
-  stationary start renders as three identical dots. Open: `encoder.res` — 16×16 is ~5 cm/pixel against 8 cm
-  segments, so 32×32 is likely needed; decided by the readout-only diagnostic.
+  stationary start renders as three identical dots. Rendered natively at 64×64 (~1.25 cm per pixel; an 8 cm
+  segment spans ~6–7 pixels). Open: line width; decided by the readout-only diagnostic.
 - **Recursive evaluation.** Decode a segment, re-render it, re-encode, repeat until y crosses 0.35 m or 16
   calls. Rendering is therefore in the evaluation loop and must be deterministic and batched.
 - **Model and training** (paper): 8 bits, entangled 4-layer brickwork QCBM (40 rotations, 14 CNOTs), width-128
@@ -229,7 +270,7 @@ Per benchmark: encoder {CNN, twin, HQViT} × prior {Softmax-Categorical, Entangl
 
 | Benchmark | Runs | Notes |
 |---|---|---|
-| MovingMNIST | 18 | + positional ablation (twin, HQViT) + Product/Frozen-QCBM rows if budget allows |
+| MovingMNIST | 18 | + paper-faithful `pos_emb=none` ablation (twin, HQViT) + Product/Frozen-QCBM rows if budget allows |
 | HEP18 | 18 | + Product-QCBM row (it's where entanglement matters, Table 3) |
 | D3IL | 54 models (× 3 folds) | priority: twin and HQViT with Entangled-QCBM first |
 | Sanity rows | ~4 | paper encoders on native inputs; one seed |
@@ -240,7 +281,7 @@ twin with Entangled-QCBM → D3IL HQViT vs twin with Entangled-QCBM → everythi
 ## 10. Build order and gates
 
 1. **Evaluation refactor** (§8.1, §8.2): `evaluate()`, Dice, readout-only, dev metrics, results-table helper.
-2. **Twin positional experiment** (§5.3) — running; decides `pool`/`pos_emb`.
+2. **Twin at 64×64/8×8 with sinusoidal positions** (§5.3, §5.5): F5 tuning sweep + readout-only diagnostic.
 3. **QCBM prior** (§7) with CNN; first quantum rows on CPU (3 qubits).
 4. **Gate: T4 timing** of HQViT forward/backward (§6).
 5. **HQViT** (§5.4, §6), equivalence tests on `qpp-cpu` and `nvidia`.
@@ -253,8 +294,10 @@ Steps 1–3 and the HEP18/D3IL data modules need no GPU and can proceed in paral
 
 ## 11. Still open
 
-- **GPU budget** (team) — sizes the grid and decides whether `encoder.res=32` is affordable for HEP18/D3IL.
+- **GPU budget** (team) — sizes the grid and decides whether 64×64/8×8 HQViT fits for HEP18/D3IL (§8.3 cost flag).
 - **IBM access** (team) — backend and minutes, needed at step 7.
 - **D3IL data source** — download location, licence, and whether camera observations exist.
-- **HEP18/D3IL rendering parameters** — crop, blob/line width, resolution; decided by gates in §10.
-- **Twin positional result** — decides §5.3.
+- **HEP18/D3IL rendering parameters** — crop, blob/line width; decided by gates in §10.
+- **Twin learning rate** — the twin underperformed the CNN well beyond the positional issue (§5.3); the F5
+  tuning budget and the readout-only diagnostic decide whether it's under-training or information loss.
+- **Platform for reported tables** (CPU vs T4) — F9 requires one per table; HQViT forces the T4.
