@@ -2,7 +2,22 @@ import numpy as np
 import pytest
 import torch
 
-from q2jepa.data.d3il import START_POINT, WINDOW_X, WINDOW_Y, normalize, render_segment, to_pixels
+from q2jepa.data.d3il import (
+    GOAL_Y,
+    INFLATION,
+    REACH,
+    ROW_OBSTACLE_X,
+    ROW_RADIUS,
+    ROW_Y,
+    START_POINT,
+    WINDOW_X,
+    WINDOW_Y,
+    normalize,
+    render_segment,
+    route_label,
+    start_point,
+    to_pixels,
+)
 
 
 def _centroid(frame):
@@ -87,3 +102,46 @@ def test_non_finite_points_raise(bad):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU")
 def test_renderer_stays_on_input_device():
     assert render_segment(_segment().to("cuda")).device.type == "cuda"
+
+
+def _gap_x(row, gap):
+    edges = (0.2, *ROW_OBSTACLE_X[row], 0.8)
+    return (edges[gap] + edges[gap + 1]) / 2
+
+
+def _through(gaps):
+    """Path from below the first row, through the given gap of each row, to the goal."""
+    points = [(0.5, -0.28)]
+    for row, gap in enumerate(gaps):
+        x = _gap_x(row, gap)
+        points += [(x, ROW_Y[row] - 0.01), (x, ROW_Y[row] + 0.01)]
+    return np.array([*points, (points[-1][0], GOAL_Y)])
+
+
+def test_route_label_is_a_bijection():
+    gaps = [(a, b, c) for a in range(2) for b in range(3) for c in range(4)]
+    labels = [route_label(_through(g)) for g in gaps]
+    assert labels == [12 * a + 4 * b + c for a, b, c in gaps]
+    assert sorted(labels) == list(range(24))
+
+
+def test_first_upward_crossing_wins():
+    y0 = ROW_Y[0]
+    dip = [(_gap_x(0, 0), y0 - 0.01), (_gap_x(0, 0), y0 + 0.01), (_gap_x(0, 1), y0 - 0.01), (_gap_x(0, 1), y0 + 0.01)]
+    rest = _through((1, 2, 3))[3:]
+    assert route_label(np.array([(0.5, -0.28), *dip, *rest])) == 0 * 12 + 2 * 4 + 3
+
+
+def test_downward_crossing_does_not_count():
+    assert route_label(np.array([(0.45, ROW_Y[0] + 0.05), (0.45, -0.28)])) is None
+
+
+def test_uncrossed_row_returns_none():
+    assert route_label(_through((0, 1, 2))[:5]) is None
+
+
+def test_constants_match_paper():
+    assert (GOAL_Y, REACH, INFLATION) == (0.35, 1.0913, 0.01)
+    assert [len(x) + 1 for x in ROW_OBSTACLE_X] == [2, 3, 4]
+    assert len(ROW_RADIUS) == len(ROW_Y) == 3
+    np.testing.assert_array_equal(start_point(), START_POINT)

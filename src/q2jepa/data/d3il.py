@@ -15,6 +15,21 @@ WINDOW_Y = (-0.2125, 1.7875)  # y in [-0.365, 0.435] m
 SIGMA = 0.85  # px; provisional, final value set by the render check (dataset spec section 8)
 START_POINT = (0.52492847, -0.27973673)  # App. B.4, metres
 
+# ALRhub/d3il @ 1d9c718, environments/d3il/envs/gym_avoiding_env/gym_avoiding/envs/objects/avoiding_objects.py
+# (get_obj_list: Cylinder size[0] is the radius; finish_line gives the goal). Metres. Rows are in crossing order.
+ROW_Y = (-0.1, 0.08, 0.26)
+ROW_OBSTACLE_X = ((0.5,), (0.425, 0.575), (0.35, 0.5, 0.65))
+ROW_RADIUS = (0.03, 0.025, 0.025)
+GOAL_Y = 0.35
+INFLATION = 0.01  # App. B.4: manipulator tip
+REACH = 1.0913  # App. B.4; the paper does not name its base point
+REACH_TOL = 1e-6
+REACH_BASE = (0.0, 0.0)  # environments/d3il/d3il_sim/core/Robots.py:33, the robot's default base_position
+
+
+def start_point() -> np.ndarray:
+    return np.array(START_POINT)
+
 
 def normalize(xy_m: np.ndarray) -> np.ndarray:
     return (np.asarray(xy_m) - NORM_CENTRE) / NORM_SCALE
@@ -45,3 +60,19 @@ def render_segment(points: torch.Tensor) -> torch.Tensor:
     t = ((to_pixel * along).sum(-1) / (along**2).sum(-1).clamp_min(1e-12)).clamp(0, 1)
     dist2 = ((to_pixel - t[..., None] * along) ** 2).sum(-1)
     return torch.exp(-dist2 / (2 * SIGMA**2)).amax(-3)
+
+
+def route_label(path_xy: np.ndarray) -> int | None:
+    """Route 0..23 = 12 g0 + 4 g1 + g2, or None if a row is never crossed upward.
+
+    g_r is the gap at the first upward crossing of row r's centre line, numbered by increasing x.
+    """
+    y, gaps = path_xy[:, 1], []
+    for row_y, obstacles in zip(ROW_Y, ROW_OBSTACLE_X, strict=True):
+        crossings = np.flatnonzero((y[:-1] < row_y) & (y[1:] >= row_y))
+        if not len(crossings):
+            return None
+        i = crossings[0]
+        x = path_xy[i, 0] + (row_y - y[i]) / (y[i + 1] - y[i]) * (path_xy[i + 1, 0] - path_xy[i, 0])
+        gaps.append(int(np.searchsorted(obstacles, x)))
+    return 12 * gaps[0] + 4 * gaps[1] + gaps[2]
