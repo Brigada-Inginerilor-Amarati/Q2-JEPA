@@ -59,3 +59,8 @@ def test_group_switches():
 def test_typo_rejected():
     with pytest.raises(ConfigCompositionException):
         _cfg(["trainer.itters=5"])
+
+
+def test_hep18_preset():
+    d = _cfg(["dataset=hep18"]).dataset
+    assert (d.name, d.n_train, d.n_dev, d.n_test) == ("hep18", 256, 64, 128)
