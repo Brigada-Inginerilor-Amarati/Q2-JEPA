@@ -247,6 +247,9 @@ To add: best-sample **Dice** weighted by direction probability; readout-only; de
 already generated) for selection.
 
 ### 8.3 HEP18 (Q-JEPA §5.3, App. F.3, F.4)
+
+Data and rendering are specified in detail in [the dataset spec](2026-11-03-q2jepa-datasets-hep18-d3il.md) §4,
+which wins where the two differ.
 - **Data** `data/hep18.py`: 448 observations (256 train / 64 val / 128 test), 18 equally likely joint futures
   per observation (priority axis × 3 schedules per priority car; yielding cars brake), constructed from the
   schedules in App. F.3 on HighwayEnv's road geometry. All 18 futures are training targets (18 target views
@@ -275,6 +278,8 @@ already generated) for selection.
 - **Sanity row:** paper's scalar MLP encoder, Entangled-QCBM and Softmax-Categorical, vs Table 3.
 
 ### 8.4 D3IL Avoiding (Q-JEPA §5.4, App. B)
+
+Data, acquisition and rendering: [the dataset spec](2026-11-03-q2jepa-datasets-hep18-d3il.md) §5.
 - **Data** `data/d3il.py`: the 96 public demonstrations, three route-stratified folds of 64/32, 8 cm
   arc-length segments resampled to 24 points, first observation interpolated from frames 4–8, coordinates
   normalized as (xy − (0.5, −0.28)) / 0.4. To check: download source and licence; whether the Avoiding task

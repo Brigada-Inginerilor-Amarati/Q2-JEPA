@@ -17,6 +17,7 @@ Read before non-trivial work:
 |---|---|
 | [docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md](docs/superpowers/specs/2026-10-28-q2jepa-stack-and-repo-design.md) | Stack, layout, rules, experiment grid, open questions |
 | [docs/superpowers/specs/2026-11-03-q2jepa-phase2-design.md](docs/superpowers/specs/2026-11-03-q2jepa-phase2-design.md) | Phase 2: fairness protocol, ViT twin, HQViT/QCBM design, HEP18 + D3IL as images, grid, build order. Overrides the kickstart spec where they differ |
+| [docs/superpowers/specs/2026-11-03-q2jepa-datasets-hep18-d3il.md](docs/superpowers/specs/2026-11-03-q2jepa-datasets-hep18-d3il.md) | HEP18 + D3IL data, acquisition, rendering, interfaces and acceptance tests |
 | [docs/superpowers/plans/2026-10-28-q2jepa-kickstart.md](docs/superpowers/plans/2026-10-28-q2jepa-kickstart.md) | Kickstart tasks 1–11 (done) and their acceptance criteria |
 | [docs/results/](docs/results/) | Reported numbers; every row reproducible from overrides + seed + SHA |
 
