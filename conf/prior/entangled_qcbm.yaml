@@ -1,0 +1,4 @@
+# Q-JEPA Eq. 4 RY/brickwork-CNOT conditional Born prior. Grid default: noisy parameter shift
+# (quantum.grad=shift, quantum.readout_flip=0.005). Noise-free shift: quantum.readout_flip=0.
+# Ideal-gradient reference: quantum.grad=ideal quantum.readout_flip=0 (flips are rejected in ideal mode).
+name: entangled_qcbm

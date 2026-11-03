@@ -10,6 +10,16 @@ class EncoderCfg:
     name: str = "cnn"
     res: int = 16  # encoder input resolution; data/readout/metrics stay 64x64
     d: int = 64
+    input_scale: float = 1.0  # l2 only: constant multiplier on the unit-RMS frame
+    input_norm: str = "none"  # "l2": unit-RMS frames, what amplitude encoding keeps; use for fair HQViT comparisons
+    # vit / hqvit only (HQViT §5: 4x4 patches, L = 3 blocks, FFN hidden = patch dim)
+    patch: int = 4
+    depth: int = 3
+    ffn_hidden: int = 0  # 0 = patch * patch
+    pool: str = "mean"  # "mean" (HQViT, ignores patch positions) or "flatten"
+    ansatz_depth: int = 2  # hqvit only: repeated PQC units D per Q/K/V circuit (HQViT §5)
+    tokens: str = "frame"  # "frame" (encode frames separately) or "spacetime" (attention across frames)
+    pos_emb: str = "none"  # "none" (HQViT paper), "sincos" (fixed 2-D), "learned"
 
 
 @dataclass
@@ -18,7 +28,8 @@ class PriorCfg:
     n_bits: int = 3
     hidden: int = 48
     components: int = 2  # mixture only
-    layers: int = 2  # QCBM body layers
+    offset_init: float = 0.1  # QCBM: std of the body-angle offsets; Q-JEPA §3.2 says only "small"
+    layers: int = 2  # QCBM body layers (brickwork CNOTs; MovingMNIST: CNOT(0,1), CNOT(1,2))
 
 
 @dataclass
@@ -33,6 +44,7 @@ class QuantumCfg:
     readout_flip: float = 0.005
     shift_obs: int = 8
     shift_coords: int = 9
+    grad: str = "shift"  # QCBM prior update: "shift" (Eq. 14, reported) or "ideal" (reference, App. A.4)
 
 
 @dataclass
@@ -75,6 +87,7 @@ class ReadoutCfg:
 class EvalCfg:
     n_obs: int = 80
     k_eval: int = 128
+    split: str = "test"  # "dev" for tuning/selection (phase-2 F5); writes metrics_dev.json instead of metrics.json
 
 
 @dataclass

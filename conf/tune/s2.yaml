@@ -1,0 +1,8 @@
+# @package _global_
+# Phase-2 F5 tuning schedule s2: no drop after warm-up. Fixed before any sweep run; every encoder gets s1-s3, one seed, dev split.
+# Usage: python -m q2jepa.train +experiment=phase2 +tune=s2 encoder=<cnn|vit|hqvit> seed=0
+trainer:
+  lr_enc: 3e-4
+  lr_enc_later: 3e-4
+eval:
+  split: dev

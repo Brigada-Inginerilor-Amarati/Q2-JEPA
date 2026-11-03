@@ -37,6 +37,23 @@ def test_table5_defaults():
 def test_group_switches():
     assert _cfg(["quantum=gpu"]).quantum.target == "nvidia"
     assert _cfg(["prior=mixture"]).prior.name == "mixture"
+    vit = _cfg(["encoder=vit"]).encoder
+    assert (vit.name, vit.input_norm, vit.patch, vit.depth, vit.pool, vit.pos_emb) == (
+        "vit",
+        "l2",
+        8,
+        3,
+        "mean",
+        "sincos",
+    )
+    assert vit.tokens == "spacetime"
+    assert _cfg().encoder.input_norm == "none"
+    assert _cfg(["+experiment=phase2"]).encoder.input_norm == "l2"
+    assert _cfg(["+experiment=phase2"]).encoder.input_scale == 0.144
+    assert (_cfg(["+experiment=phase2"]).encoder.res, _cfg(["+experiment=phase2", "encoder=vit"]).encoder.res) == (
+        64,
+        64,
+    )
 
 
 def test_typo_rejected():

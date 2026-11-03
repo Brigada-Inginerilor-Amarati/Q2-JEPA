@@ -47,3 +47,11 @@ def test_black_image_raises():
 def test_ansatz_parameters_change_attention():
     x, tq, tk = _setup(4, np.random.default_rng(5).random((16, 16)))
     assert not np.allclose(factored_acm(x, tq, tk), factored_acm(x, tq, tk + 0.3))
+
+
+@pytest.mark.parametrize("acm", [factored_acm, lambda x, tq, tk: full_swap_test_probs(x, tq, tk)])
+def test_attention_ignores_patch_positions(acm):
+    # I_idx ⊗ W never touches the index qubits: shuffling patches only shuffles the ACM (phase-2 spec §5.3).
+    x, tq, tk = _setup(2, np.random.default_rng(3).random((16, 16)))
+    perm = np.random.default_rng(4).permutation(16)
+    np.testing.assert_allclose(acm(x[perm], tq, tk), acm(x, tq, tk)[np.ix_(perm, perm)], atol=1e-6)

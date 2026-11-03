@@ -1,6 +1,12 @@
 import numpy as np
 
-from q2jepa.quantum.born import MMNIST_CNOT_LAYERS, apply_readout_flips, born_probs, sample_codes
+from q2jepa.quantum.born import (
+    MMNIST_CNOT_LAYERS,
+    apply_readout_flips,
+    born_probs,
+    brickwork_layers,
+    sample_codes,
+)
 
 
 def _np_born(angles, layers):
@@ -70,3 +76,16 @@ def test_readout_flips():
     assert (apply_readout_flips(bits, 0.0, rng) == bits).all()
     assert (apply_readout_flips(bits, 1.0, rng) == 1 - bits).all()
     assert abs((apply_readout_flips(bits, 0.005, rng) != bits).mean() - 0.005) < 0.002
+
+
+def test_brickwork_matches_paper_layouts():
+    assert brickwork_layers(3, 2) == MMNIST_CNOT_LAYERS
+    d3il = brickwork_layers(8, 4)  # App. B.3: four layers, fourteen CNOTs
+    assert sum(map(len, d3il)) == 14 and d3il[1] == [(1, 2), (3, 4), (5, 6)]
+
+
+def test_seeded_sampling_is_reproducible():
+    a = np.random.default_rng(5).uniform(-np.pi, np.pi, (3, 3, 3))
+    z1 = sample_codes(a, MMNIST_CNOT_LAYERS, 64, np.random.default_rng(0), seed=7)
+    z2 = sample_codes(a, MMNIST_CNOT_LAYERS, 64, np.random.default_rng(0), seed=7)
+    assert np.array_equal(z1, z2)

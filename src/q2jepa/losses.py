@@ -1,4 +1,4 @@
-"""Q-JEPA objectives: energy score (Eq. 7), LOO cost (Eq. 12), VISReg (App. A.3), prior update (Eq. 13)."""
+"""Q-JEPA objectives: energy score (Eq. 7), LOO cost (Eq. 12), shifted cost (Eq. 11), VISReg (App. A.3), prior update (Eq. 13)."""
 
 import math
 
@@ -33,6 +33,11 @@ def energy_score(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 def loo_cost(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     k = pred.shape[1]
     return _rho(pred, target[:, None]) - _pairwise(pred).sum(2) / (k - 1)
+
+
+def shift_cost(u: torch.Tensor, target: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+    """Eq. 11 cost of predictions u (b, M, d): rho(u, t) - E_{V~Q} rho(u, V), Q = reference predictions (b, K, d)."""
+    return _rho(u, target[:, None]) - _rho(u[:, :, None], ref[:, None]).mean(-1)
 
 
 def visreg_terms(v: torch.Tensor, n_proj: int = 128) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

@@ -2,6 +2,10 @@
 
 Date: 2026-10-28 · Status: draft for team review
 
+> **Partly superseded** by the [phase-2 design](2026-11-03-q2jepa-phase2-design.md) (2026-11-03): HEP18 and D3IL
+> are now in scope as rendered images, the encoder grid adds a classical ViT twin, and HQViT gradients stay in
+> CUDA-Q (§9). Where the two disagree, the phase-2 document wins.
+
 ## 1. Intent
 
 We are building Q²-JEPA for a one-month AI × HPC × Quantum hackathon. It is a visual world model that predicts *several* plausible futures from a short video clip. It combines two quantum components:

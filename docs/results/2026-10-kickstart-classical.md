@@ -17,4 +17,7 @@ Acceptance criteria (plan Task 10): validity ≥ 85%, coverage ≥ 80%, TV ≤ 0
 The cd0d8af run predates the readout-init reseed fix (747bbda), so its readout initialization differs.
 
 16×16 is the HQViT input size (8 qubits per register). Dropping the classical encoder to that resolution
-costs ~4 points of coverage and +0.33 px minADE: this is the baseline the quantum encoder must match.
+costs ~4 points of coverage and +0.33 px minADE.
+
+> Superseded (2026-11-03): HQViT is judged against the classical ViT twin with `input_norm=l2`, not against
+> these rows; the CNN is an anchor to the paper. See the [phase-2 spec](../superpowers/specs/2026-11-03-q2jepa-phase2-design.md) §4.

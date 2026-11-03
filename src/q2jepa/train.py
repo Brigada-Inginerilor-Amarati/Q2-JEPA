@@ -16,10 +16,10 @@ import wandb
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 
-import q2jepa.config  # noqa: F401  registers schema
+from q2jepa.config import Config  # also registers the schema
 from q2jepa.data.mmnist import StochasticMovingMNIST
 from q2jepa.encoder import build_encoder, prepare
-from q2jepa.losses import energy_score, loo_cost, prior_score_loss, visreg
+from q2jepa.losses import energy_score, loo_cost, prior_score_loss, shift_cost, visreg
 from q2jepa.metrics import mmnist_metrics
 from q2jepa.predictor import Predictor
 from q2jepa.prior.classical import build_prior
@@ -47,10 +47,37 @@ def _batch(ds: StochasticMovingMNIST, size: int, device: torch.device) -> tuple[
     return obs, fut
 
 
+def _prior_loss(prior, predictor, h, z, pred, tgt) -> torch.Tensor:
+    """Separate prior update (Q-JEPA App. A.4 step 4): encoder outputs, targets and predictor are held fixed."""
+    if not getattr(prior, "trainable", True):
+        return torch.zeros((), device=h.device)  # Frozen-QCBM
+    if getattr(prior, "grad", None) == "shift":
+        return prior.shift_surrogate(h, lambda idx, codes: shift_cost(predictor(h[idx], codes), tgt[idx], pred[idx]))
+    return prior_score_loss(prior.log_prob(h, z), loo_cost(pred, tgt))  # classical priors and ideal-gradient QCBM
+
+
 def _save(obj: dict, path: Path) -> None:
     tmp = path.with_suffix(".tmp")
     torch.save(obj, tmp)
     os.replace(tmp, path)
+
+
+_NOT_IDENTITY = {"trainer": ("stop_after", "ckpt_every", "device")}
+_IDENTITY_GROUPS = ("encoder", "prior", "predictor", "quantum", "trainer", "visreg", "readout", "dataset")
+
+
+def _identity(cfg) -> str:
+    """Everything that defines the trained model, as the values that differ from the schema defaults.
+
+    Resume and re-evaluation must match it. Storing only non-defaults means a new config key with a default value
+    doesn't invalidate existing checkpoints.
+    """
+    defaults = OmegaConf.structured(Config)
+    out = {"seed": cfg.seed}
+    for g in _IDENTITY_GROUPS:
+        cur, ref = OmegaConf.to_container(cfg[g], resolve=True), OmegaConf.to_container(defaults[g])
+        out[g] = {k: v for k, v in cur.items() if k not in _NOT_IDENTITY.get(g, ()) and ref.get(k) != v}
+    return json.dumps(out, sort_keys=True)
 
 
 def run(cfg, out_dir: Path) -> dict[str, float]:
@@ -65,43 +92,53 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
     _seed(cfg.seed, 0)
     encoder = build_encoder(cfg.encoder).to(device)
     predictor = Predictor(cfg.encoder.d, cfg.prior.n_bits, cfg.predictor.width).to(device)
-    prior = build_prior(cfg.prior, cfg.encoder.d).to(device)
+    prior = build_prior(cfg.prior, cfg.encoder.d, cfg.quantum).to(device)
     groups = {"encoder": (encoder, t.lr_enc), "predictor": (predictor, t.lr_pred), "prior": (prior, t.lr_prior)}
     opt = torch.optim.AdamW(
         [{"params": m.parameters(), "lr": lr, "name": n} for n, (m, lr) in groups.items()], weight_decay=t.weight_decay
     )
 
     ckpt_path = out_dir / "ckpt.pt"
+    identity = _identity(cfg)
     start = 1
     if ckpt_path.exists():
         ck = torch.load(ckpt_path, map_location=device, weights_only=True)
+        if ck.get("identity", identity) != identity:  # pre-phase-2 checkpoints have no identity; accept them
+            raise ValueError(f"{ckpt_path} was trained with a different model/training config; use a new run dir")
         for name, (module, _) in groups.items():
             module.load_state_dict(ck[name])
         opt.load_state_dict(ck["opt"])
         start = ck["it"] + 1
 
     def checkpoint(it: int) -> None:
-        _save({**{n: m.state_dict() for n, (m, _) in groups.items()}, "opt": opt.state_dict(), "it": it}, ckpt_path)
+        _save(
+            {
+                **{n: m.state_dict() for n, (m, _) in groups.items()},
+                "opt": opt.state_dict(),
+                "it": it,
+                "identity": identity,
+            },
+            ckpt_path,
+        )
 
     log = wandb.init(mode=cfg.wandb.mode, project=cfg.wandb.project, dir=str(out_dir),
                      config=OmegaConf.to_container(cfg, resolve=True))  # fmt: skip
     train_ds = StochasticMovingMNIST("train", cfg.dataset.root, n_obs=cfg.dataset.n_train)
-    res = cfg.encoder.res
+    res, norm, scale = cfg.encoder.res, cfg.encoder.input_norm, cfg.encoder.input_scale
 
     for it in range(start, t.iters + 1):
         _seed(cfg.seed, it)
         phase = stage(it, t.warmup_repr, t.warmup_pred)
         opt.param_groups[0]["lr"] = t.lr_enc if it <= t.warmup_repr else t.lr_enc_later
         obs, fut = _batch(train_ds, t.batch, device)
-        h, tgt = encoder(prepare(obs, res)), encoder(prepare(fut, res))
+        h, tgt = encoder(prepare(obs, res, norm, scale)), encoder(prepare(fut, res, norm, scale))
         loss = t.lambda_reg * (visreg(h, cfg.visreg, it) + visreg(tgt, cfg.visreg, it)) / 2
         if phase != "repr":
             z = prior.sample(h.detach(), t.k_train)
             pred = predictor(h, z)
             loss = loss + energy_score(pred, tgt.detach())
             if phase == "full":
-                cost = loo_cost(pred, tgt.detach())
-                loss = loss + prior_score_loss(prior.log_prob(h.detach(), z), cost)
+                loss = loss + _prior_loss(prior, predictor, h.detach(), z, pred.detach(), tgt.detach())
         opt.zero_grad(set_to_none=True)
         loss.backward()
         for module, _ in groups.values():
@@ -130,7 +167,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
             _seed(cfg.seed, READOUT_SEED_OFFSET + it)
             obs, fut = _batch(train_ds, r.batch, device)
             with torch.no_grad():
-                h, tgt = encoder(prepare(obs, res)), encoder(prepare(fut, res))
+                h, tgt = encoder(prepare(obs, res, norm, scale)), encoder(prepare(fut, res, norm, scale))
             rloss = readout_loss(render(obs[:, 2], readout(h, tgt)), fut)
             ropt.zero_grad(set_to_none=True)
             rloss.backward()
@@ -141,16 +178,24 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
         _save(readout.state_dict(), readout_path)
 
     _seed(cfg.seed, EVAL_SEED_OFFSET)
-    test_obs = StochasticMovingMNIST("test", cfg.dataset.root, n_obs=cfg.dataset.n_test).unique_obs()
-    obs = test_obs[: cfg.eval.n_obs].to(device)
+    split = cfg.eval.split
+    if split not in ("test", "dev"):
+        raise ValueError(f"unknown eval split {split!r}")
+    n_split = cfg.dataset.n_test if split == "test" else cfg.dataset.n_dev
+    eval_obs = StochasticMovingMNIST(split, cfg.dataset.root, n_obs=n_split).unique_obs()
+    obs = eval_obs[: cfg.eval.n_obs].to(device)
     k = cfg.eval.k_eval
     with torch.no_grad():
-        h = encoder(prepare(obs, res))
+        h = encoder(prepare(obs, res, norm, scale))
         pred = predictor(h, prior.sample(h, k))  # (B, K, d)
         disp = readout(h.repeat_interleave(k, 0), pred.reshape(-1, pred.shape[-1])).reshape(len(obs), k, 3, 2)
     per_obs = [mmnist_metrics(d) for d in disp.cpu().double().numpy()]
     metrics = {key: float(np.mean([m[key] for m in per_obs])) for key in per_obs[0]}
-    (out_dir / "metrics.json").write_text(json.dumps(metrics, sort_keys=True, indent=2))
+    # Keep each split's provenance next to its metrics: re-evaluating via the CLI overwrites .hydra/.
+    (out_dir / f"eval_config_{split}.yaml").write_text(OmegaConf.to_yaml(cfg, resolve=True))
+    (out_dir / ("metrics.json" if split == "test" else f"metrics_{split}.json")).write_text(
+        json.dumps(metrics, sort_keys=True, indent=2)
+    )
     log.log(metrics)
     log.finish()
     return metrics

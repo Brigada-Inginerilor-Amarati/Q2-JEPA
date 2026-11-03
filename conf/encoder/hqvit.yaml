@@ -1,0 +1,5 @@
+# HQViT inherits every setting of the classical twin (phase-2 F4): change conf/encoder/vit.yaml, not this file.
+defaults:
+  - vit
+  - _self_
+name: hqvit
