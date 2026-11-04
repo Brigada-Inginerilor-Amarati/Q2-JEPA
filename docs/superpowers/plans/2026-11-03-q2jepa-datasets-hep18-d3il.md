@@ -91,12 +91,15 @@ Expected from memory, to be confirmed: width 4, vehicle 5 × 2, `outer_distance 
 - [ ] **Step 2: Write the failing tests in `tests/test_hep18.py`**
 
 ```python
-@pytest.mark.parametrize(("schedule", "s_rel", "v_rel"), [
-    (SCHEDULE_A, [3 * V - 2.25, 6 * V - 6.75, 9 * V - 9], [V - 1.5, V - 1.5, V]),
-    (SCHEDULE_B, [3 * V, 6 * V, 9 * V], [V, V, V]),
-    (SCHEDULE_C, [3 * V + 2.25, 6 * V + 6.75, 9 * V + 11.25], [V + 1.5, V + 1.5, V + 1.5]),
-    (SCHEDULE_D, [2.1 * V, 2.85 * V, 3 * V], [0.4 * V, 0.1 * V, 0.0]),
-])
+@pytest.mark.parametrize(
+    ("schedule", "s_rel", "v_rel"),
+    [
+        (SCHEDULE_A, [3 * V - 2.25, 6 * V - 6.75, 9 * V - 9], [V - 1.5, V - 1.5, V]),
+        (SCHEDULE_B, [3 * V, 6 * V, 9 * V], [V, V, V]),
+        (SCHEDULE_C, [3 * V + 2.25, 6 * V + 6.75, 9 * V + 11.25], [V + 1.5, V + 1.5, V + 1.5]),
+        (SCHEDULE_D, [2.1 * V, 2.85 * V, 3 * V], [0.4 * V, 0.1 * V, 0.0]),
+    ],
+)
 def test_kinematics_closed_form(schedule, s_rel, v_rel):  # V = 8.5, D0 = 45.0
     s, v = car_state(D0, V, schedule_acc(schedule, np.array(V)), np.array([3.0, 6.0, 9.0]))
     np.testing.assert_allclose(s, -D0 + np.array(s_rel), atol=1e-9)
