@@ -130,7 +130,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
         )
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    set_target(cfg.quantum.target)
+    set_target(cfg.quantum.target, cfg.quantum.precision)
     np.random.seed(cfg.seed)
     t = cfg.trainer
     device = resolve_device(t.device)
