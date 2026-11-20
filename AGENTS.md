@@ -33,7 +33,7 @@ The README describes the target. What actually exists today:
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
 | Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | done; used for equivalence tests and the benchmark |
-| HQViT encoder (`encoder/hqvit.py`, `quantum/hqvit.py`, `encoder=hqvit`; inherits `vit.yaml`) | built and CPU-tested; **not trained** — too slow on CPU. T4 gate measured 2026-11-20: ~25 h per run in fp32 ([GPU gate spec](docs/superpowers/specs/2026-11-20-q2jepa-gpu-gate.md)), **before** the adjoint backward (`hqvit.adjoint_grads`, CPU backward ~20× faster); re-time on GPU |
+| HQViT encoder (`encoder/hqvit.py`, `quantum/hqvit.py`, `encoder=hqvit`; inherits `vit.yaml`) | built; **not trained yet**. CUDA-Q training: ~25 h/run on a T4. `quantum.hqvit_train=torch` (exact torch simulation, evaluated in CUDA-Q): ~0.75 h/run on CPU |
 | QCBM priors: entangled / product / frozen (`prior/qcbm.py`, `quantum/bridge.py`, `prior=*_qcbm`); parameter shift + ideal reference (`quantum.grad`) | done; verified on `nvidia` T4 in fp64 (2026-11-20); `quantum.precision` selects fp32/fp64 |
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
 | Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
@@ -41,7 +41,7 @@ The README describes the target. What actually exists today:
 | HEP18 and D3IL data and renderers (`data/hep18.py`, `data/d3il.py`, `scripts/fetch_d3il.py`, `conf/dataset/`) | done; σ provisional until the render check (dataset spec §8). Not wired into `train.py`: `dataset=hep18` or `d3il` raises `NotImplementedError` |
 | HEP18 and D3IL readouts and metrics (`readout/`) | **not built** |
 
-Do not launch full `encoder=hqvit` training on CPU (~30 min per step at batch 64). Next build order is
+Do not launch full `encoder=hqvit` training on CPU with the default `quantum.hqvit_train=cudaq` (minutes per step). Next build order is
 phase-2 spec §10: evaluation refactor → twin positional experiment → QCBM prior → T4 timing gate → HQViT →
 MovingMNIST grid → IBM inference → HEP18 → D3IL. Plan new work with a spec/plan under `docs/superpowers/`.
 
@@ -52,7 +52,10 @@ From the spec; breaking any of these makes results invalid even if the code runs
 - `cudaq` is imported **only** under `src/q2jepa/quantum/`. Everything else calls into it.
 - `qiskit` is imported **only** in `scripts/eval_hardware.py` and its test.
   (Both enforced by `tests/test_import_boundaries.py`.)
-- No "quantum" path that bypasses CUDA-Q (e.g. a hand-written torch statevector) in any reported run.
+- Every reported number is computed through CUDA-Q. One exception: HQViT may *train* with
+  `quantum.hqvit_train=torch`, an exact torch simulation of the same circuit (`quantum/torch_sim.py`, checked
+  against CUDA-Q by `tests/test_torch_sim.py`). Evaluation always runs the CUDA-Q circuits. Results tables say
+  which simulator trained each HQViT row. No other bypass.
 - No quantum result without a classical baseline trained under identical settings (same `encoder.res`, seed, trainer).
   Only the component under test changes between compared rows.
 - HQViT claims are made against the classical twin (`encoder=vit`) with the same patching, blocks, FFN,

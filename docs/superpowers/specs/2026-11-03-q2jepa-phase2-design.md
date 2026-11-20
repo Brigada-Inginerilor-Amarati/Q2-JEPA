@@ -223,6 +223,7 @@ through a `torch.autograd.Function`.
 | A. Parameter shift (±π/2 per angle) | ~2 × (angles per circuit) × circuits extra runs, ~100–170× forward | fallback only |
 | B. Exact gradients from CUDA-Q statevectors (`cudaq.get_state` of the patch circuits, derivative states per angle) | a few forward passes | **chosen** |
 | C. CUDA-Q builds the ansatz matrix once per step, torch applies it to all patches | ~57 small circuits per step, batch-independent | **rejected**: per-patch evolution would leave CUDA-Q and gut the HPC story |
+| D. Train with an exact torch simulation of W(θ) (`quantum.hqvit_train=torch`); evaluate through CUDA-Q | 0.5 s/step at batch 64 on CPU | **chosen for the grid (2026-11-20)**: option B costs ~25 h/run on a T4 |
 
 Gate before building HQViT: time one forward pass (and one option-B backward pass) for a batch of 64 at
 64×64 with 8×8 patches on a Colab T4, against the expected budget of 4,000 iterations × 2 branches × 3 frames. If it doesn't
@@ -232,6 +233,12 @@ argument lists, or `nvidia-mqpu`), fewer blocks, then a smaller batch — never 
 **Gate result (2026-11-20, T4):** ~25 h and ~29 Colab units per HQViT run in fp32; equivalence tests pass on
 `nvidia` in fp64. Details, fp32 test tolerances and the `quantum.precision` option:
 [GPU gate spec](2026-11-20-q2jepa-gpu-gate.md).
+
+**Decision (2026-11-20): option D.** Too slow for the grid, so HQViT trains with `quantum/torch_sim.py`, the same
+gates in torch (equal to CUDA-Q on states and gradients: `tests/test_torch_sim.py`, `tests/test_train.py`).
+Readout training uses it too. Evaluation always switches to CUDA-Q, so every reported number comes from the
+CUDA-Q circuits. Tables mark these rows "trained in torch, evaluated in CUDA-Q". Option B remains available
+(`quantum.hqvit_train=cudaq`, the default) for a CUDA-Q-trained comparison row if GPU time allows.
 
 Equivalence test required: option-B gradients match finite differences and option-A parameter shift on a
 small case, on both `qpp-cpu` and `nvidia`.

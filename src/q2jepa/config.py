@@ -46,6 +46,7 @@ class QuantumCfg:
     shift_obs: int = 8
     shift_coords: int = 9
     grad: str = "shift"  # QCBM prior update: "shift" (Eq. 14, reported) or "ideal" (reference, App. A.4)
+    hqvit_train: str = "cudaq"  # HQViT training simulator: "cudaq" or "torch" (exact, faster); eval is always cudaq
 
 
 @dataclass

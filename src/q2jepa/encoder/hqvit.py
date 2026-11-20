@@ -25,8 +25,10 @@ from torch import nn
 
 from q2jepa.encoder.vit import Block, ViTEncoder
 from q2jepa.quantum.bridge import RegisterEvolve
+from q2jepa.quantum.torch_sim import ansatz_matrix
 
 THETA_INIT_STD = 0.1
+BACKENDS = ("cudaq", "torch")  # torch: training only (quantum.hqvit_train); evaluation always uses cudaq
 
 
 def n_ansatz_params(m: int, depth: int) -> int:
@@ -42,16 +44,21 @@ class QuantumBlock(Block):
             raise ValueError(f"token dim {dim} must be a power of two (patch*patch pixels on m qubits)")
         n = n_ansatz_params(self.m, ansatz_depth)
         self.theta_q, self.theta_k, self.theta_v = (nn.Parameter(torch.zeros(n)) for _ in range(3))  # see encoder
+        self.backend = "cudaq"
+
+    def evolve(self, amp: torch.Tensor, theta: torch.Tensor, tokens: int) -> torch.Tensor:
+        """(I ⊗ W(θ)) on each row of amp (N, tokens * dim): the CUDA-Q circuit, or its exact torch simulation."""
+        if self.backend == "torch":
+            mat = ansatz_matrix(theta, self.m, self.ansatz_depth)
+            return (amp.to(mat.dtype).reshape(len(amp), tokens, -1) @ mat).reshape(len(amp), -1)
+        return RegisterEvolve.apply(amp, theta, self.m, self.ansatz_depth)
 
     def attend(self, x: torch.Tensor) -> torch.Tensor:
         n, t, dim = x.shape
         tp = 1 << (t - 1).bit_length()
         flat = F.pad(x, (0, 0, 0, tp - t)).reshape(n, tp * dim)
         amp = flat / flat.norm(dim=1, keepdim=True).clamp_min(1e-12)  # amplitude encoding of each clip
-        q, k, v = (
-            RegisterEvolve.apply(amp, th, self.m, self.ansatz_depth).reshape(n, tp, dim)
-            for th in (self.theta_q, self.theta_k, self.theta_v)
-        )
+        q, k, v = (self.evolve(amp, th, tp).reshape(n, tp, dim) for th in (self.theta_q, self.theta_k, self.theta_v))
         acm = (q.conj() @ k.transpose(-2, -1)).abs() ** 2 * t**2
         acm = acm.masked_fill(torch.arange(tp, device=x.device) >= t, float("-inf"))  # padded keys
         values = v.abs() ** 2 * (t * dim)
@@ -68,3 +75,9 @@ class HQViTEncoder(ViTEncoder):
             for blk in self.blocks:
                 for th in (blk.theta_q, blk.theta_k, blk.theta_v):
                     th.copy_(THETA_INIT_STD * torch.randn(th.shape, generator=gen))
+
+    def set_backend(self, name: str) -> None:
+        if name not in BACKENDS:
+            raise ValueError(f"unknown HQViT backend {name!r}; expected one of {BACKENDS}")
+        for blk in self.blocks:
+            blk.backend = name

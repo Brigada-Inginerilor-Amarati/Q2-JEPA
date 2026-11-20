@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import torch
 from hydra import compose, initialize_config_dir
 
 import q2jepa.config  # noqa: F401
@@ -55,6 +56,37 @@ def test_hqvit_smoke_and_inherits_twin_config(tmp_path):
         k: v for k, v in twin.items() if k not in ("name", "patch", "depth")
     }
     assert set(run(cfg, tmp_path)) >= {"coverage", "validity", "tv", "min_ade", "es"}
+
+
+def test_hqvit_torch_training_matches_cudaq_and_evaluates_in_cudaq(tmp_path, monkeypatch):
+    import q2jepa.encoder.hqvit as hq
+
+    hq_cfg = ["encoder=hqvit", "encoder.patch=4", "encoder.depth=1"]
+    ref = run(_cfg(hq_cfg), tmp_path / "cudaq")
+
+    calls = []
+    real = hq.RegisterEvolve
+
+    class Spy:
+        @staticmethod
+        def apply(*args):
+            calls.append(torch.is_grad_enabled())
+            return real.apply(*args)
+
+    monkeypatch.setattr(hq, "RegisterEvolve", Spy)
+    out = run(_cfg([*hq_cfg, "quantum.hqvit_train=torch"]), tmp_path / "torch")
+    # CUDA-Q runs only in evaluation: one no-grad encoder pass = Q, K, V of the single block. Training and readout
+    # (which also runs under no_grad) would add calls.
+    assert calls == [False] * 3
+    assert out == pytest.approx(ref)  # same model up to float rounding (qpp-cpu is fp64)
+
+
+def test_hqvit_train_backend_is_part_of_identity_and_hqvit_only(tmp_path):
+    from q2jepa.train import _identity
+
+    assert _identity(_cfg(["quantum.hqvit_train=torch"])) != _identity(_cfg())
+    with pytest.raises(ValueError, match="encoder=hqvit"):
+        run(_cfg(["quantum.hqvit_train=torch"]), tmp_path)
 
 
 def test_ideal_gradient_rejects_readout_noise(tmp_path):

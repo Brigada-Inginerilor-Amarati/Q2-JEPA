@@ -21,7 +21,7 @@ import q2jepa.config  # noqa: F401  (registers the schema)
 from q2jepa.data.mmnist import StochasticMovingMNIST
 from q2jepa.encoder import prepare
 from q2jepa.quantum import get_target, set_target
-from q2jepa.train import _batch, build_models, resolve_device, train_step
+from q2jepa.train import _batch, build_models, resolve_device, train_step, use_hqvit_backend
 
 CONF = str(Path(__file__).resolve().parents[1] / "conf")
 
@@ -57,6 +57,8 @@ def bench_step(target: str, encoder: str, prior: str, steps: int = 3, overrides:
     device = resolve_device(cfg.trainer.device)
     groups, opt = build_models(cfg, device)
     enc, t, e = groups["encoder"][0], cfg.trainer, cfg.encoder
+    hqvit_train = cfg.quantum.hqvit_train if encoder == "hqvit" else "cudaq"  # override applies to hqvit only
+    use_hqvit_backend(enc, hqvit_train)  # as in run(): readout timing below uses it too
     torch.manual_seed(cfg.seed)
     obs, fut = _batch(StochasticMovingMNIST("train", cfg.dataset.root, n_obs=cfg.dataset.n_train), t.batch, device)
 
@@ -71,6 +73,7 @@ def bench_step(target: str, encoder: str, prior: str, steps: int = 3, overrides:
         "encoder": encoder,
         "prior": prior,
         "target": get_target(),
+        "hqvit_train": hqvit_train,
         "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
         "batch": t.batch,
         "res": e.res,
@@ -91,13 +94,13 @@ def main() -> None:
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="extra Hydra override")
     args = ap.parse_args()
     cu = args.cu_per_hour
-    print("| encoder | prior | target | device | batch | repr s/it | full s/it | readout s/it | est. h/run |"
+    print("| encoder | prior | target | hqvit_train | device | batch | repr s/it | full s/it | readout s/it | est. h/run |"
           + (" est. CU/run |" if cu else ""))  # fmt: skip
-    print("|---" * (9 + bool(cu)) + "|")
+    print("|---" * (10 + bool(cu)) + "|")
     for enc in args.encoder or ["cnn", "vit", "hqvit"]:
         for prior in args.prior or ["softmax_categorical"]:
             r = bench_step(args.target, enc, prior, args.steps, args.set)
-            print(f"| {r['encoder']} | {r['prior']} | {r['target']} | {r['device']} | {r['batch']} | "
+            print(f"| {r['encoder']} | {r['prior']} | {r['target']} | {r['hqvit_train']} | {r['device']} | {r['batch']} | "
                   f"{r['repr_s']:.3f} | {r['full_s']:.3f} | {r['readout_s']:.3f} | {r['est_hours']:.2f} |"
                   + (f" {r['est_hours'] * cu:.1f} |" if cu else ""), flush=True)  # fmt: skip
 

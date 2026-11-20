@@ -86,6 +86,14 @@ def resolve_device(name: str) -> torch.device:
     return torch.device(name)
 
 
+def use_hqvit_backend(encoder, name: str) -> None:
+    """Select HQViT's simulator; a no-op "cudaq" for encoders without quantum blocks."""
+    if hasattr(encoder, "set_backend"):
+        encoder.set_backend(name)
+    elif name != "cudaq":
+        raise ValueError(f"quantum.hqvit_train={name!r} only applies to encoder=hqvit")
+
+
 def build_models(cfg, device: torch.device) -> tuple[dict, torch.optim.Optimizer]:
     """Encoder, predictor, prior and their AdamW, initialized from `cfg.seed`. Groups map name -> (module, lr)."""
     t = cfg.trainer
@@ -136,6 +144,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
     device = resolve_device(t.device)
     groups, opt = build_models(cfg, device)
     encoder, predictor, prior = (groups[n][0] for n in ("encoder", "predictor", "prior"))
+    use_hqvit_backend(encoder, cfg.quantum.hqvit_train)  # training and readout; evaluation switches to cudaq
 
     ckpt_path = out_dir / "ckpt.pt"
     identity = _identity(cfg)
@@ -203,6 +212,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
                 log.log({"readout_loss": rloss.item(), "readout_it": it})
         _save(readout.state_dict(), readout_path)
 
+    use_hqvit_backend(encoder, "cudaq")  # every reported number comes from the CUDA-Q circuits
     _seed(cfg.seed, EVAL_SEED_OFFSET)
     split = cfg.eval.split
     if split not in ("test", "dev"):
