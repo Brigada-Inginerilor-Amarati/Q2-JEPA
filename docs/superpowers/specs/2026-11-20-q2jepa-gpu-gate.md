@@ -2,8 +2,7 @@
 
 Rezultatele primei rulări pe GPU a componentelor cuantice și a gate-ului de timing HQViT din
 [phase-2 spec](2026-11-03-q2jepa-phase2-design.md) §6. Ce scrie aici completează spec-ul de phase 2, nu îl
-înlocuiește. Deciziile care rezultă sunt trecute în [planul de sprint](../plans/2026-11-19-q2jepa-colab-sprint.md)
-(D1, D2) după ce le confirmă echipa.
+înlocuiește.
 
 **Platformă:** Google Colab Pro, Tesla T4 (15 GB), ~1,15 unități pe oră. Cod de pe `main` la `0ab636a`. Target
 CUDA-Q `nvidia`; `cuda-quantum` 0.16, wheel-ul ales de `scripts/colab_setup.py`.
@@ -104,15 +103,13 @@ fp64 e de ~2,3–2,4 ori mai lent decât fp32.
 
 ## 4. Ce decide pentru grid
 
-**D2, nivelul HQViT** (pragurile din planul de sprint §4): ~25 h și ~29 de unități pe rulare înseamnă **Galben**.
-Bugetul ar permite și tuning HQViT: pe fiecare cont, 1 tuning plus 2 rulări de grid fac ~90 de unități din 200.
-Decizia o ia echipa.
+**Costul HQViT:** ~25 h și ~29 de unități pe rulare (T4, fp32). Decizia o ia echipa.
 
-**D1, tipul de GPU:** de completat după L4, A100 și G4. Pe baza §2, un GPU mai rapid probabil reduce doar o parte
+**Tipul de GPU:** de completat după L4, A100 și G4. Pe baza §2, un GPU mai rapid probabil reduce doar o parte
 din pas.
 
 **Precizia pentru grid: propunere fp32**, de confirmat de echipă.
-- În fp64, o rulare HQViT trece de 36 h și de 60 de unități (nivelul Roșu); 6 rulări de grid ar costa ~390 de
+- În fp64, o rulare HQViT trece de 36 h și de 60 de unități ; 6 rulări de grid ar costa ~390 de
   unități.
 - Corectitudinea circuitelor e verificată în fp64 (§1). fp32 adaugă erori relative de ~10⁻⁶, mult sub zgomotul
   deja prezent în antrenare: sampling-ul QCBM cu shot-uri finite, flip-urile de 0,5% și SGD.
