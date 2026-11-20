@@ -99,9 +99,12 @@ def last_step(run_dir: Path) -> str:
     if not path.exists():
         return ""
     lines = path.read_text().splitlines()
-    if not lines:
+    try:
+        d = json.loads(lines[-1]) if lines else None
+    except json.JSONDecodeError:  # the run is mid-write: use the line before
+        d = json.loads(lines[-2]) if len(lines) > 1 else None
+    if d is None:
         return ""
-    d = json.loads(lines[-1])
     for stage in ("it", "readout_it", "finetune_it"):  # world model, readout, D3IL stage 3
         if stage in d:
             loss = next((v for k, v in d.items() if k.endswith("loss")), None)
@@ -115,7 +118,10 @@ def write_progress(base: Path, jobs: list[Job], running: set[str], failed: set[s
     rows, counts = [], {"done": 0, "running": 0, "failed": 0, "pending": 0}
     for j in jobs:
         path = base / j.name / j.metrics
-        m = json.loads(path.read_text()) if path.exists() else {}
+        try:
+            m = json.loads(path.read_text()) if path.exists() else {}
+        except json.JSONDecodeError:  # metrics from before atomic writes, mid-write
+            m = {}
         status = "done" if m else "failed" if j.name in failed else "running" if j.name in running else "pending"
         counts[status] += 1
         step = last_step(base / j.name) if status in ("running", "failed") else ""

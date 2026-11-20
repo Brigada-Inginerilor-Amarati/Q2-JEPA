@@ -209,9 +209,10 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
     metrics = bench.evaluate(cfg, encoder, predictor, prior, readout)
     # Keep each split's provenance next to its metrics: re-evaluating via the CLI overwrites .hydra/.
     (out_dir / f"eval_config_{split}.yaml").write_text(OmegaConf.to_yaml(cfg, resolve=True))
-    (out_dir / ("metrics.json" if split == "test" else f"metrics_{split}.json")).write_text(
-        json.dumps(metrics, sort_keys=True, indent=2)
-    )
+    path = out_dir / ("metrics.json" if split == "test" else f"metrics_{split}.json")
+    tmp = path.with_suffix(".json.tmp")  # atomic: the grid launcher reads metrics while other runs write theirs
+    tmp.write_text(json.dumps(metrics, sort_keys=True, indent=2))
+    tmp.replace(path)
     log.log(metrics)
     log.finish()
     return metrics

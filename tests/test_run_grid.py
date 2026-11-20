@@ -91,3 +91,16 @@ def test_resume_refuses_another_commit(tmp_path):
     (run / "commit.txt").write_text("0" * 40 + "\n")
     with pytest.raises(SystemExit, match="another commit"):
         run_grid.main(["--bench", "mmnist", "--stage", "tune", "--root", str(tmp_path), "--encoders", "cnn"])
+
+
+def test_progress_survives_partial_files(tmp_path):
+    """A run mid-write (half a log line, an empty metrics file) must not crash the launcher."""
+    jobs = run_grid.plan("mmnist", "tune", tmp_path, encoders=("cnn",))
+    base = tmp_path / "mmnist" / "tune"
+    (base / "cnn-s1").mkdir(parents=True)
+    (base / "cnn-s1" / "log.jsonl").write_text('{"it": 5, "loss": 0.5}\n{"it": 6, "lo')
+    (base / "cnn-s2").mkdir()
+    (base / "cnn-s2" / "metrics_dev.json").write_text("")
+    run_grid.write_progress(base, jobs, {"cnn-s1", "cnn-s2"}, set())
+    progress = (base / "progress.md").read_text()
+    assert "| cnn-s1 | running | it 5, loss 0.5 |" in progress and "| cnn-s2 | running |" in progress
