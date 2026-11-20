@@ -114,7 +114,7 @@ class HEP18Benchmark:
         pred = predictor(h, prior.sample(h, k))  # (n, K, 64)
         s, v = self.decode(readout, pred, obs[:, None])
         s, v, s_true, v_true = (x.cpu().double().numpy() for x in (s, v, fut[..., 0], fut[..., 1]))
-        rng = np.random.default_rng(0)
+        rng = np.random.default_rng([cfg.seed, 7])  # agent re-pairing for shuffled validity
         per_obs = [hep18_metrics(s[i], v[i], s_true[i], v_true[i], rng) for i in range(n)]
         metrics = {key: float(np.mean([m[key] for m in per_obs])) for key in per_obs[0]}
 

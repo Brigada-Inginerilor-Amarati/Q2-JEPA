@@ -63,3 +63,7 @@ def test_scaled_predictor_starts_as_shared():
         shared.norm.load_state_dict(scaled.norm.state_dict())
     h, z = torch.randn(3, 16), torch.randint(0, 2, (3, 4, 8)).float()
     torch.testing.assert_close(scaled(h, z), shared(h, z))  # s = 1, b = 0 at zero init
+
+
+def test_agent_local_predictor_matches_table7_count():
+    assert sum(p.numel() for p in AgentLocalPredictor(64, 12, 64, 4).parameters()) == 22_800

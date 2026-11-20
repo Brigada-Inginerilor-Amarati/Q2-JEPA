@@ -22,8 +22,9 @@ class AgentLocalPredictor(nn.Module):
     """HEP18 (App. A.2, F.3): residual per-agent predictor with masked local codes and no output normalization.
 
     Each agent sees the full scene h and only its own bits (the others' signed bits are zeroed before the shared
-    code MLP); the position of the unmasked bits tells the shared network which agent it serves. It outputs that
-    agent's change in its own (d / agents)-dim slice of h.
+    code MLP), plus a learned agent-identity offset on the code embedding. It outputs that agent's change in its own
+    (d / agents)-dim slice of h. HEP18 settings give 22,800 parameters (Table 7). The single-agent `Predictor` omits
+    the offset: there it duplicates the code MLP's last bias.
     """
 
     def __init__(self, d: int = 64, n_bits: int = 12, width: int = 64, agents: int = 4):
@@ -36,12 +37,13 @@ class AgentLocalPredictor(nn.Module):
             mask[a, a * (n_bits // agents) : (a + 1) * (n_bits // agents)] = 1
         self.register_buffer("mask", mask)
         self.code = nn.Sequential(nn.Linear(n_bits, width), nn.SiLU(), nn.Linear(width, width), nn.SiLU())
+        self.agent = nn.Parameter(torch.zeros(agents, width))  # agent-identity offset (App. C), zero init
         self.context = nn.Linear(d, width)
         self.transition = nn.Sequential(nn.Linear(3 * width, width), nn.SiLU(), nn.Linear(width, self.d_agent))
 
     def forward(self, h: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
         b, k, _ = z.shape
-        u = self.code((2 * z - 1)[:, :, None] * self.mask)  # (B, K, agents, width)
+        u = self.code((2 * z - 1)[:, :, None] * self.mask) + self.agent  # (B, K, agents, width)
         c = self.context(h)[:, None, None].expand_as(u)
         delta = self.transition(torch.cat([c, u, c * u], dim=-1))  # (B, K, agents, d_agent)
         return (h.reshape(b, 1, self.agents, self.d_agent) + delta).reshape(b, k, -1)

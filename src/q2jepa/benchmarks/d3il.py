@@ -6,6 +6,8 @@ consecutive real pairs. Evaluation rolls out from the common stationary start an
 (App. B.4).
 """
 
+import warnings
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -168,10 +170,18 @@ class D3ILBenchmark:
 
     @torch.no_grad()
     def evaluate(self, cfg, encoder, predictor, prior, readout) -> dict[str, float]:
+        if cfg.eval.split != "test":
+            # Rollouts from the common start are the reported metric; there is no held-out dev signal (spec §5.6).
+            raise ValueError("D3IL has no dev split: evaluate with eval.split=test; reuse MovingMNIST-tuned rates")
         routes = [accept(p) for p in self.rollouts(cfg, encoder, predictor, prior, readout)]
         accepted = np.array([r for r in routes if r is not None], dtype=np.int64)
         counts = np.bincount(accepted, minlength=ROUTES)
         covered, tv = expected_route_stats(counts, cfg.eval.subset)
+        if len(accepted) < cfg.eval.subset:
+            warnings.warn(
+                f"only {len(accepted)} accepted paths (< eval.subset={cfg.eval.subset}): route stats use all of them",
+                stacklevel=2,
+            )
         # Readout-only diagnostic on the train demos (render check; the fold's eval demos stay untouched).
         # Fresh features: evaluation runs the CUDA-Q circuits, while the cache came from the training simulator.
         i = torch.arange(min(cfg.eval.n_obs, len(self.obs)), device=self.device)

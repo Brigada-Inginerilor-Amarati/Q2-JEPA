@@ -122,3 +122,8 @@ def test_d3il_preset_is_paper_app_b(root):
     assert (r.iters, r.iters_low, r.lr, r.lr_low, r.weight_decay) == (8000, 2000, 2e-3, 2e-4, 1e-5)
     assert (p.n_bits, p.layers, q.shots, q.shift_obs, q.shift_coords) == (8, 4, 512, 8, 12)
     assert (full.predictor.kind, full.predictor.width, full.eval.rollouts, full.eval.subset) == ("scaled", 128, 384, 60)
+
+
+def test_d3il_refuses_dev_evaluation(root, tmp_path):
+    with pytest.raises(ValueError, match="no dev split"):
+        run(_cfg(root, ["eval.split=dev"]), tmp_path)

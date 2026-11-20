@@ -89,3 +89,17 @@ def test_seeded_sampling_is_reproducible():
     z1 = sample_codes(a, MMNIST_CNOT_LAYERS, 64, np.random.default_rng(0), seed=7)
     z2 = sample_codes(a, MMNIST_CNOT_LAYERS, 64, np.random.default_rng(0), seed=7)
     assert np.array_equal(z1, z2)
+
+
+def test_hep18_grid_circuit_matches_reference():
+    from q2jepa.quantum import is_fp32
+    from q2jepa.quantum.born import hep18_grid_layers
+
+    layers = hep18_grid_layers()
+    a = np.random.default_rng(3).uniform(-np.pi, np.pi, (5, 12))
+    np.testing.assert_allclose(born_probs(a, layers), _np_born(a, layers), atol=1e-6 if is_fp32() else 1e-12)
+    # bit j of the code index is qubit j, so car c's bits are qubits 3c..3c+2 (the predictor's mask)
+    b = np.zeros((5, 12))
+    b[0, 4] = np.pi  # flip qubit 4 (car W, column 1) only. Layer 3's CNOT (4, 5) flips 5; layer 4's (4, 7), (5, 8)
+    p = born_probs(b, layers)  # flip 7 and 8 (W -> S at columns 1, 2)
+    assert p.argmax() == sum(1 << q for q in (4, 5, 7, 8)) and p.max() > 1 - 1e-6

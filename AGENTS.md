@@ -65,7 +65,8 @@ From the spec; breaking any of these makes results invalid even if the code runs
   resolution / state space (64×64 for MovingMNIST; metres and routes for HEP18 and D3IL).
 - All rows of one comparison table run on the same platform; numbers differ across machines.
 - Tuning and model selection use `eval.split=dev` (the `+tune=s1|s2|s3` presets set it); the test split is
-  evaluated once per final checkpoint. ViT/HQViT rows always use `+experiment=phase2` (without it `res` is 16).
+  evaluated once per final checkpoint. ViT/HQViT rows always use a preset: `+experiment=phase2` for MovingMNIST (without it `res` is 16),
+  `+experiment=hep18` or `+experiment=d3il` for those benchmarks (never stacked with `phase2`).
 - Every reported number must be regenerable from config overrides + seed + commit SHA. No manual
   notebook tweaks: change config or code, not the notebook.
 - A new benchmark = a `data/` module + a `benchmarks/` class + a `readout/` module + `conf/dataset/*.yaml` +
