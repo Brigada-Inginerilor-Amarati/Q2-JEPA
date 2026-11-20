@@ -1,0 +1,35 @@
+# @package _global_
+# HEP18 preset (Q-JEPA Table 5, App. A.2, C, F.3) on rendered per-car clips. Same for every encoder:
+# python -m q2jepa.train +experiment=hep18 encoder=<cnn|vit|hqvit> prior=<...> seed=<0..2>
+defaults:
+  - override /dataset: hep18
+encoder:
+  res: 64
+  input_norm: l2
+  input_scale: 0.0346  # data/hep18.py: mean rendered-frame L2 norm 2.2156 / 64 at SIGMA = 1.25
+  d: 16  # per car; 4 cars concatenated give h in R^64
+predictor:
+  kind: agent_local
+  width: 64
+prior:
+  n_bits: 12
+  layers: 4
+  layout: hep18_grid
+  components: 4  # Mixture-4
+quantum:
+  shots: 512
+  shift_obs: 8
+  shift_coords: 12
+trainer:
+  iters: 6000
+  batch: 32
+  k_train: 32
+  lambda_change: 0.6666666666666666
+  energy_beta: 0.5
+  energy_eps: 0.0001
+readout:
+  iters: 16000
+  batch: 128
+eval:
+  n_obs: 128
+  k_eval: 128

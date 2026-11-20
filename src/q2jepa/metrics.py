@@ -1,4 +1,4 @@
-"""Q-JEPA App. F.4 MovingMNIST metrics for one observation's sampled displacements (S, 3, 2), pixels."""
+"""Q-JEPA App. F.4 metrics: MovingMNIST (displacements, pixels) and HEP18 (four-agent trajectories, metres)."""
 
 import numpy as np
 
@@ -27,4 +27,59 @@ def mmnist_metrics(disp: np.ndarray) -> dict[str, float]:
         "tv": float(0.5 * np.abs(freq - target).sum()),
         "min_ade": float((DIRECTION_PROBS * ade.min(0)).sum()),
         "es": float((DIRECTION_PROBS * to_truth).sum() - 0.5 * pair),
+    }
+
+
+POS_TOL, SPEED_TOL = 2.0, 1.0  # HEP18 joint match: metres, m/s (App. F.4)
+
+
+def _match_err(s: np.ndarray, v: np.ndarray, s_true: np.ndarray, v_true: np.ndarray) -> np.ndarray:
+    """(S, J) largest tolerance-normalized error over the trailing axes (agents, times) of each sample-target pair."""
+    ds = np.abs(s[:, None] - s_true[None]) / POS_TOL
+    dv = np.abs(v[:, None] - v_true[None]) / SPEED_TOL
+    return np.maximum(ds, dv).reshape(ds.shape[0], ds.shape[1], -1).max(-1)
+
+
+def _joint_valid(s, v, s_true, v_true) -> tuple[np.ndarray, np.ndarray]:
+    err = _match_err(s, v, s_true, v_true)
+    return err.min(1) <= 1.0, err.argmin(1)
+
+
+def hep18_metrics(
+    s: np.ndarray, v: np.ndarray, s_true: np.ndarray, v_true: np.ndarray, rng: np.random.Generator, shuffles: int = 10
+) -> dict[str, float]:
+    """Q-JEPA App. F.4 HEP18 metrics for one observation.
+
+    s, v: sampled positions and speeds (S, agents, 3); s_true, v_true: the 18 futures (18, agents, 3).
+    """
+    n_s, n_fut, agents = s.shape[0], s_true.shape[0], s.shape[1]
+    valid, nearest = _joint_valid(s, v, s_true, v_true)
+    cats = np.where(valid, nearest, n_fut)
+    freq = np.bincount(cats, minlength=n_fut + 1) / n_s
+    target = np.append(np.full(n_fut, 1 / n_fut), 0.0)
+
+    pos_err = np.abs(s[:, None] - s_true[None])  # (S, 18, agents, 3)
+    flat, flat_true = s.reshape(n_s, -1), s_true.reshape(n_fut, -1)
+    to_truth = np.linalg.norm(flat[:, None] - flat_true[None], axis=-1).mean()
+    pair = np.linalg.norm(flat[:, None] - flat[None], axis=-1).sum() / (n_s * (n_s - 1))
+
+    shuffled = []
+    for _ in range(shuffles):  # re-pair agents independently: keeps marginals, breaks coordination
+        perm = np.stack([rng.permutation(n_s) for _ in range(agents)], 1)
+        idx = (perm, np.arange(agents)[None])
+        shuffled.append(_joint_valid(s[idx], v[idx], s_true, v_true)[0].mean())
+
+    local = []  # each agent matches any of its own distinct futures (its 4 schedules)
+    for a in range(agents):
+        own_s, own_v = np.unique(np.stack([s_true[:, a], v_true[:, a]], -1), axis=0).transpose(2, 0, 1)
+        local.append(_match_err(s[:, a], v[:, a], own_s, own_v).min(1) <= 1.0)
+    return {
+        "coverage": float(np.isin(np.arange(n_fut), cats[valid]).mean()),
+        "validity": float(valid.mean()),
+        "tv": float(0.5 * np.abs(freq - target).sum()),
+        "min_ade": float(pos_err.mean((2, 3)).min(0).mean()),
+        "min_fde": float(pos_err[..., -1].mean(-1).min(0).mean()),
+        "es": float(to_truth - 0.5 * pair),
+        "shuffled_validity": float(np.mean(shuffled)),
+        "local_validity": float(np.mean(local)),
     }

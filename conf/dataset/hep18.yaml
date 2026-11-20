@@ -2,3 +2,4 @@ name: hep18
 n_train: 256
 n_dev: 64
 n_test: 128
+agents: 4
