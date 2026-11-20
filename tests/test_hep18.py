@@ -13,6 +13,7 @@ from q2jepa.data.hep18 import (
     COLUMN,
     HEP18,
     INTERSECTION_HALF,
+    S_WINDOW,
     SCHEDULE_A,
     SCHEDULE_B,
     SCHEDULE_C,
@@ -26,6 +27,7 @@ from q2jepa.data.hep18 import (
     future_schedules,
     generate,
     render_agent_clip,
+    s_to_path,
     s_to_row,
     schedule_acc,
     to_xy,
@@ -249,3 +251,36 @@ def test_only_fetch_script_downloads(module):
     roots = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     roots |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     assert not roots & {"gdown", "urllib", "requests", "highway_env"}
+
+
+def test_column_layout_is_unchanged():
+    """The default layout renders exactly what it did before the snake layout existed."""
+    s = torch.linspace(-70, 55, 30).reshape(10, 3)
+    grid = torch.arange(64, dtype=torch.float32)
+    rows = (grid - s_to_row(s)[..., None]) ** 2
+    old = torch.exp(-(rows[..., None] + (grid - COLUMN) ** 2) / (2 * SIGMA**2))
+    assert torch.equal(render_agent_clip(s), old)
+
+
+def test_snake_path_is_continuous_and_fine():
+    s = torch.linspace(S_WINDOW[0], S_WINDOW[1], 20001)
+    row, col = s_to_path(s, 8)
+    step = torch.hypot(row.diff(), col.diff())
+    path_px = step.sum().item()
+    assert step.max() < 2.5 * path_px / 20000  # no jumps: steps stay uniform along the path
+    assert (S_WINDOW[1] - S_WINDOW[0]) / path_px < 0.3  # ~0.27 m per pixel, vs ~2.1 for the column layout
+    assert row.min() >= 0 and row.max() <= 63 and col.min() >= 3 and col.max() <= 60
+    assert (row[0], col[0]) == (3.5, 3.0)  # starts top-left, reads left to right
+
+
+def test_snake_blob_sits_on_the_path():
+    s = torch.linspace(-60, 50, 37)
+    clip = render_agent_clip(s[:, None].expand(-1, 3), layout="snake")[:, 0]
+    grid = torch.arange(64, dtype=torch.float32)
+    total = clip.sum((-2, -1))
+    row, col = s_to_path(s, 8)
+    assert ((clip * grid[:, None]).sum((-2, -1)) / total - row).abs().max() < 0.05
+    assert ((clip * grid).sum((-2, -1)) / total - col).abs().max() < 0.05
+    assert (total - math.pi * 2 * SIGMA**2).abs().max() < 0.05  # blob never cut by an edge
+    with pytest.raises(ValueError, match="layout"):
+        render_agent_clip(s[:3], layout="spiral")

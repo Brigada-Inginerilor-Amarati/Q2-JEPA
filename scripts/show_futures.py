@@ -12,37 +12,13 @@ import argparse
 from pathlib import Path
 
 import torch
-from omegaconf import OmegaConf
 from PIL import Image
 from torchvision.utils import make_grid
 
-from q2jepa.config import Config
+from q2jepa.benchmarks.mmnist import encode_clips
 from q2jepa.data.mmnist import StochasticMovingMNIST, true_trajectories
-from q2jepa.encoder import prepare
-from q2jepa.quantum import set_target
-from q2jepa.readout.mmnist import TranslationReadout, render
-from q2jepa.train import EVAL_SEED_OFFSET, _seed, build_models, resolve_device
-
-
-def load_config(run_dir: Path, split: str):
-    """The run's config; eval_config_<split>.yaml when present (.hydra/ is overwritten by CLI re-evaluation)."""
-    path = run_dir / f"eval_config_{split}.yaml"
-    path = path if path.exists() else run_dir / ".hydra" / "config.yaml"
-    return OmegaConf.merge(OmegaConf.structured(Config), OmegaConf.load(path))
-
-
-def load_run(cfg, run_dir: Path, device: torch.device):
-    if cfg.dataset.name != "mmnist":
-        raise NotImplementedError(f"only MovingMNIST runs are supported, got {cfg.dataset.name!r}")
-    set_target(cfg.quantum.target, cfg.quantum.precision)
-    groups, _ = build_models(cfg, device)
-    ck = torch.load(run_dir / "ckpt.pt", map_location=device, weights_only=True)
-    for name, (module, _) in groups.items():
-        module.load_state_dict(ck[name])
-        module.eval()
-    readout = TranslationReadout(cfg.encoder.d).to(device)
-    readout.load_state_dict(torch.load(run_dir / "readout.pt", map_location=device, weights_only=True))
-    return groups, readout
+from q2jepa.readout.mmnist import render
+from q2jepa.runs import load_trained
 
 
 @torch.no_grad()
@@ -51,18 +27,14 @@ def sample_futures(run_dir: Path, n_obs=None, k=None, split=None, device=None):
 
     Arguments left as None take the run's eval settings, which reproduce the evaluation's samples exactly.
     """
-    base = OmegaConf.load(run_dir / ".hydra" / "config.yaml")
-    cfg = load_config(run_dir, split or base.eval.split)
-    n_obs, k, split = n_obs or cfg.eval.n_obs, k or cfg.eval.k_eval, split or cfg.eval.split
-    device = device or resolve_device(cfg.trainer.device)
-    groups, readout = load_run(cfg, run_dir, device)
-    encoder, predictor, prior = (groups[n][0] for n in ("encoder", "predictor", "prior"))
-    e = cfg.encoder
+    t = load_trained(run_dir, split, device)
+    cfg, readout = t.cfg, t.readout
+    n_obs, k, split = n_obs or cfg.eval.n_obs, k or cfg.eval.k_eval, cfg.eval.split
+    device = t.bench.device
     n_split = cfg.dataset.n_test if split == "test" else cfg.dataset.n_dev
     obs = StochasticMovingMNIST(split, cfg.dataset.root, n_obs=n_split).unique_obs()[:n_obs].to(device)
-    _seed(cfg.seed, EVAL_SEED_OFFSET)
-    h = encoder(prepare(obs, e.res, e.input_norm, e.input_scale))
-    pred = predictor(h, prior.sample(h, k))
+    h = encode_clips(t.encoder, obs, cfg.encoder)
+    pred = t.predictor(h, t.prior.sample(h, k))
     disp = readout(h.repeat_interleave(k, 0), pred.reshape(-1, pred.shape[-1])).reshape(len(obs), k, 3, 2)
     last = obs[:, 2]
     sampled = render(last, disp.reshape(len(obs), -1, 2)).reshape(len(obs), k, 3, 64, 64)

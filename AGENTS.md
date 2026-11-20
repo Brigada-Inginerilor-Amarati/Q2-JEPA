@@ -33,15 +33,16 @@ The README describes the target. What actually exists today:
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
 | Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | done; used for equivalence tests and the benchmark |
-| HQViT encoder (`encoder/hqvit.py`, `quantum/hqvit.py`, `encoder=hqvit`; inherits `vit.yaml`) | built; **not trained yet**. CUDA-Q training: ~25 h/run on a T4. `quantum.hqvit_train=torch` (exact torch simulation, evaluated in CUDA-Q): ~0.75 h/run on CPU |
+| HQViT encoder (`encoder/hqvit.py`, `quantum/hqvit.py`, `encoder=hqvit`; inherits `vit.yaml`) | built; **not trained yet**. CUDA-Q training: ~25 h/run on a T4. `quantum.hqvit_train=torch` (exact torch simulation, evaluated in CUDA-Q): 1.6 h/run (MovingMNIST) on a T4 |
 | QCBM priors: entangled / product / frozen (`prior/qcbm.py`, `quantum/bridge.py`, `prior=*_qcbm`); parameter shift + ideal reference (`quantum.grad`) | done; verified on `nvidia` T4 in fp64 (2026-11-20); `quantum.precision` selects fp32/fp64 |
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
 | Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
 | Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
 | HEP18 and D3IL data and renderers (`data/hep18.py`, `data/d3il.py`, `scripts/fetch_d3il.py`, `conf/dataset/`) | done; σ provisional until the render check (dataset spec §8) |
-| HEP18 and D3IL training (`benchmarks/`, `readout/hep18.py`, `readout/d3il.py`, `metrics.py`, `+experiment=hep18`, `+experiment=d3il`) | built and CPU-tested ([plan](docs/superpowers/plans/2026-11-20-hep18-d3il-training.md)); not yet trained. D3IL needs `data/d3il/avoiding.npz` |
+| HEP18 and D3IL training (`benchmarks/`, `readout/hep18.py`, `readout/d3il.py`, `metrics.py`, `+experiment=hep18`, `+experiment=d3il`) | built. HEP18 under-trains (2026-11-20, dev: CNN on images 0.1–0.4% validity, `encoder=state` 44%, paper 98%); Daria's fix sweep in the runbook §1a picks the best image setting; HEP18 is then reported with it, whatever it reaches (never dropped). `dataset.layout=snake` tried and rejected. D3IL needs `data/d3il/avoiding.npz` |
+| Grid launcher and plots (`scripts/run_grid.py`, `scripts/plot_results.py`, `scripts/show_hep18.py`, `scripts/show_d3il.py`) | done |
 
-Do not launch full `encoder=hqvit` training on CPU with the default `quantum.hqvit_train=cudaq` (minutes per step). Next build order is
+Do not launch full `encoder=hqvit` training with the default `quantum.hqvit_train=cudaq` (~25 h/run on a T4). Next build order is
 phase-2 spec §10: evaluation refactor → twin positional experiment → QCBM prior → T4 timing gate → HQViT →
 MovingMNIST grid → IBM inference → HEP18 → D3IL. Plan new work with a spec/plan under `docs/superpowers/`.
 
@@ -67,6 +68,11 @@ From the spec; breaking any of these makes results invalid even if the code runs
 - Tuning and model selection use `eval.split=dev` (the `+tune=s1|s2|s3` presets set it); the test split is
   evaluated once per final checkpoint. ViT/HQViT rows always use a preset: `+experiment=phase2` for MovingMNIST (without it `res` is 16),
   `+experiment=hep18` or `+experiment=d3il` for those benchmarks (never stacked with `phase2`).
+- **All training runs on a Colab GPU** (`quantum=gpu trainer.device=cuda`): tuning, grid, sweeps, debug and
+  smoke runs alike. Never train on a local CPU. Locally you only run `pytest`, `ruff` and `--cfg job`.
+- Tuning and grid runs go through `scripts/run_grid.py` (§4 "Grid runs"), never hand-written commands.
+- HEP18 and D3IL runs train and report on rendered images. `encoder=state` is a diagnostic only: never in a
+  sweep, tuning, grid or results table (`scripts/plot_results.py` refuses it).
 - Every reported number must be regenerable from config overrides + seed + commit SHA. No manual
   notebook tweaks: change config or code, not the notebook.
 - A new benchmark = a `data/` module + a `benchmarks/` class + a `readout/` module + `conf/dataset/*.yaml` +
@@ -76,7 +82,7 @@ From the spec; breaking any of these makes results invalid even if the code runs
 - Docs, specs, plans, results, comments and commit messages are in **English**. Keep them short and plain:
   facts, tables and commands; no padding, no restating other docs.
 
-## 4. Local dev loop (Mac, CPU)
+## 4. Local dev loop (tests only) and training on GPU
 
 Python 3.12 (`.python-version`), `uv`. CUDA-Q runs on macOS arm64 with the `qpp-cpu` target only.
 
@@ -97,12 +103,17 @@ uv run ruff check . && uv run ruff format .
 Hydra config in `conf/`, typed schema in `src/q2jepa/config.py` (Q-JEPA Table 5 defaults). Unknown keys
 are rejected — check the schema before inventing an override.
 
+Training runs on a Colab GPU only (§3, §5). Locally, only check the resolved config:
+
 ```bash
-uv run python -m q2jepa.train                                   # CNN @16x16, Softmax-Categorical, qpp-cpu
-uv run python -m q2jepa.train encoder.res=64 seed=0             # paper sanity baseline (~20 min on CPU)
-uv run python -m q2jepa.train encoder.res=64 prior=mixture seed=0
-uv run python -m q2jepa.train trainer.iters=20 readout.iters=20 eval.n_obs=4   # quick smoke run
-uv run python -m q2jepa.train --cfg job                          # print resolved config, don't run
+uv run python -m q2jepa.train +experiment=hep18 encoder=cnn --cfg job   # print resolved config, don't run
+```
+
+On the Colab VM (`colab exec`, or the runbook's notebook cells):
+
+```bash
+python -m q2jepa.train encoder.res=64 seed=0 quantum=gpu trainer.device=cuda      # paper sanity baseline
+python -m q2jepa.train trainer.iters=20 readout.iters=20 eval.n_obs=4 quantum=gpu trainer.device=cuda   # smoke
 ```
 
 - Each run writes `ckpt.pt`, `metrics.json` and the resolved `.hydra/config.yaml` to its Hydra output dir
@@ -111,6 +122,22 @@ uv run python -m q2jepa.train --cfg job                          # print resolve
   `checkpoint_dir` key.
 - `trainer.stop_after=N` ends a session after N iterations so long runs can be chunked across Colab sessions.
 - `quantum=gpu` sets the `nvidia` target (Linux + NVIDIA GPU only); `trainer.device` defaults to `auto`.
+
+### Grid runs: always `scripts/run_grid.py`
+
+Tuning and grid runs (anything that feeds a results table) go through the launcher, on a Colab T4. Never
+hand-write `q2jepa.train` commands for them. The launcher has no CPU mode. Runbook:
+[docs/superpowers/plans/2026-11-20-training-runbook.md](docs/superpowers/plans/2026-11-20-training-runbook.md).
+
+```bash
+python scripts/run_grid.py --bench <mmnist|hep18|d3il> --stage <tune|grid> --jobs 3 [--dry-run]
+```
+
+It sets the preset, the GPU platform, `quantum.hqvit_train=torch` for HQViT, the tuned schedule per encoder,
+seeds and folds. It writes one dir per run under `--root`, skips finished runs and resumes interrupted ones,
+and keeps `<root>/<bench>/<stage>/progress.md` current from each run's `log.jsonl`. Change
+the grid in the script, not by hand. Results and figures: `scripts/plot_results.py`; single runs:
+`scripts/show_futures.py` (MovingMNIST), `scripts/show_hep18.py`, `scripts/show_d3il.py`.
 
 ### Benchmark
 

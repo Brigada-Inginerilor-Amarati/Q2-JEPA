@@ -114,12 +114,17 @@ class DatasetCfg:
     n_test: int = 80
     fold: int = 0  # d3il only: which of the three folds
     agents: int = 1  # encoded separately and concatenated into h (HEP18: 4 cars, d = 4 x encoder.d)
+    layout: str = "column"  # HEP18 rendering: "column" (one column, ~2.1 m/px) or "snake" (wrapped lane)
+    bands: int = 8  # HEP18 snake layout: horizontal runs (~0.25 m/px at 8)
 
 
 @dataclass
 class WandbCfg:
     mode: str = "offline"
     project: str = "q2jepa"
+    entity: str = ""  # team; "" = the API key's default
+    name: str = ""  # run name; also the resume id, so a resumed run continues its curves (scripts/run_grid.py sets it)
+    group: str = ""
 
 
 @dataclass

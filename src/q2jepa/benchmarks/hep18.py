@@ -15,6 +15,7 @@ from q2jepa.readout.hep18 import SpeedReadout, integrate, readout_loss
 from q2jepa.seeding import READOUT_SEED_OFFSET, reseed, save_atomic
 
 AGENTS, SCHEDULES = 4, 4
+STATE_SCALE = (50.0, 10.0)  # App. F.3: positions / 50 m, speeds / 10 m/s
 ENCODE_CHUNK = 128  # clips per encoder call: bounds HQViT's CUDA-Q register (log2(128) batch qubits)
 
 # FIRST_FUTURE[c, k]: a future j in which car c follows schedule k (each pair occurs).
@@ -35,11 +36,15 @@ class _Split:
         return len(self.obs)
 
 
-def _encode_cars(encoder, s: torch.Tensor, e) -> torch.Tensor:
-    """Features (..., d_agent) of per-car clips rendered from positions s (..., 3), in chunks."""
-    flat = s.reshape(-1, 3)
-    out = [encode_clips(encoder, render_agent_clip(c), e) for c in flat.split(ENCODE_CHUNK)]
-    return torch.cat(out).reshape(*s.shape[:-1], -1)
+def _encode_cars(encoder, states: torch.Tensor, cfg) -> torch.Tensor:
+    """Features (..., d_agent) of per-car views from states (..., 3, 2) of (s, v): clips rendered from s, in chunks,
+    or for encoder=state the paper's six scalars (s / 50, v / 10) directly (App. F.3)."""
+    e, ds = cfg.encoder, cfg.dataset
+    if e.name == "state":
+        return encoder((states / states.new_tensor(STATE_SCALE)).flatten(-2))
+    flat = states[..., 0].reshape(-1, 3)
+    out = [encode_clips(encoder, render_agent_clip(c, ds.layout, ds.bands), e) for c in flat.split(ENCODE_CHUNK)]
+    return torch.cat(out).reshape(*states.shape[:-2], -1)
 
 
 def scene_targets(uniq_feat: torch.Tensor) -> torch.Tensor:
@@ -59,9 +64,8 @@ class HEP18Benchmark:
         return torch.randint(len(self.train), (size,)).to(self.device)
 
     def encode(self, encoder, idx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        e = self.cfg.encoder
-        h = _encode_cars(encoder, self.train.obs[idx, ..., 0], e).flatten(-2)  # (B, 64)
-        return h, scene_targets(_encode_cars(encoder, self.train.uniq[idx, ..., 0], e))
+        h = _encode_cars(encoder, self.train.obs[idx], self.cfg).flatten(-2)  # (B, 64)
+        return h, scene_targets(_encode_cars(encoder, self.train.uniq[idx], self.cfg))
 
     def _readout_step(self, readout, feat, obs, fut):
         """feat (N, 4, d_agent), obs (N, 4, 3, 2), fut (N, 4, 3, 2) -> loss."""
@@ -77,7 +81,7 @@ class HEP18Benchmark:
             readout.load_state_dict(torch.load(path, map_location=self.device, weights_only=True))
             return readout
         with torch.no_grad():  # the frozen encoder's features of every distinct train future, computed once
-            cache = _encode_cars(encoder, self.train.uniq[..., 0], cfg.encoder)  # (n, 4, 4, d_agent)
+            cache = _encode_cars(encoder, self.train.uniq, cfg)  # (n, 4, 4, d_agent)
         r = cfg.readout
         opt = torch.optim.AdamW(readout.parameters(), lr=r.lr, weight_decay=r.weight_decay)
         sched = torch.as_tensor(_SCHEDULES, device=self.device)
@@ -106,20 +110,28 @@ class HEP18Benchmark:
         return integrate(obs[..., 2, 0], obs[..., 2, 1], speeds), speeds
 
     @torch.no_grad()
-    def evaluate(self, cfg, encoder, predictor, prior, readout) -> dict[str, float]:
+    def sample(self, cfg, encoder, predictor, prior, readout) -> tuple[_Split, np.ndarray, np.ndarray]:
+        """The eval split, and sampled positions and speeds (n, K, 4, 3) for its first eval.n_obs observations."""
         data = _Split(cfg.eval.split, cfg.dataset.root, self.device)
         n, k = min(cfg.eval.n_obs, len(data)), cfg.eval.k_eval
-        obs, fut = data.obs[:n], data.fut[:n]
-        h = _encode_cars(encoder, obs[..., 0], cfg.encoder).flatten(-2)  # (n, 64)
+        obs = data.obs[:n]
+        h = _encode_cars(encoder, obs, cfg).flatten(-2)  # (n, 64)
         pred = predictor(h, prior.sample(h, k))  # (n, K, 64)
         s, v = self.decode(readout, pred, obs[:, None])
-        s, v, s_true, v_true = (x.cpu().double().numpy() for x in (s, v, fut[..., 0], fut[..., 1]))
+        return data, s.cpu().double().numpy(), v.cpu().double().numpy()
+
+    @torch.no_grad()
+    def evaluate(self, cfg, encoder, predictor, prior, readout) -> dict[str, float]:
+        data, s, v = self.sample(cfg, encoder, predictor, prior, readout)
+        n = len(s)
+        obs, fut = data.obs[:n], data.fut[:n]
+        s_true, v_true = (x.cpu().double().numpy() for x in (fut[..., 0], fut[..., 1]))
         rng = np.random.default_rng([cfg.seed, 7])  # agent re-pairing for shuffled validity
         per_obs = [hep18_metrics(s[i], v[i], s_true[i], v_true[i], rng) for i in range(n)]
         metrics = {key: float(np.mean([m[key] for m in per_obs])) for key in per_obs[0]}
 
         # Readout-only diagnostic (App. F.4): decode the encoded real futures; each must match its own future.
-        tgt = scene_targets(_encode_cars(encoder, data.uniq[:n, ..., 0], cfg.encoder))  # (n, 18, 64)
+        tgt = scene_targets(_encode_cars(encoder, data.uniq[:n], cfg))  # (n, 18, 64)
         rs, rv = (x.cpu().double().numpy() for x in self.decode(readout, tgt, obs[:, None]))
         hits = [_joint_valid(rs[i], rv[i], s_true[i], v_true[i]) for i in range(n)]
         metrics["readout_validity"] = float(np.mean([(ok & (j == np.arange(18))).mean() for ok, j in hits]))

@@ -23,12 +23,10 @@ lefthook install
 Runs are configured with Hydra (`conf/config.yaml`) and support deterministic checkpointing and resume (rerun with the same `hydra.run.dir`):
 
 ```bash
-# Default classical baseline (CNN encoder @ 16x16, Softmax-Categorical prior, CPU target)
-uv run python -m q2jepa.train
-
-# Full 64x64 sanity baseline or Mixture-2 prior
-uv run python -m q2jepa.train encoder.res=64 seed=0
-uv run python -m q2jepa.train encoder.res=64 prior=mixture seed=0
+# All training runs on a Colab GPU (AGENTS.md §3); grids go through scripts/run_grid.py.
+# Full 64x64 sanity baseline or Mixture-2 prior, on the Colab VM:
+python -m q2jepa.train encoder.res=64 seed=0 quantum=gpu trainer.device=cuda
+python -m q2jepa.train encoder.res=64 prior=mixture seed=0 quantum=gpu trainer.device=cuda
 
 # GPU simulation; rerun the same command to resume from outputs/gpu-run/ckpt.pt
 uv run python -m q2jepa.train quantum=gpu trainer.device=cuda hydra.run.dir=outputs/gpu-run

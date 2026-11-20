@@ -54,9 +54,10 @@ def test_scene_targets_equal_encoding_every_future():
     torch.manual_seed(0)
     enc = CNNEncoder(64, 16).eval()
     data = _Split("dev", "data", torch.device("cpu"))
-    e = _cfg().encoder
+    cfg = _cfg()
+    e = cfg.encoder
     with torch.no_grad():
-        fast = scene_targets(_encode_cars(enc, data.uniq[:2, ..., 0], e))  # 16 clips per observation
+        fast = scene_targets(_encode_cars(enc, data.uniq[:2], cfg))  # 16 clips per observation
         clips = render_agent_clip(data.fut[:2, ..., 0]).reshape(-1, 3, 64, 64)  # all 72
         brute = enc(prepare(clips, 64, e.input_norm, e.input_scale)).reshape(2, 18, 64)
     torch.testing.assert_close(fast, brute)

@@ -6,6 +6,7 @@ batches, readouts and metrics live in q2jepa/benchmarks/.
 """
 
 import json
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -45,6 +46,22 @@ def _prior_loss(cfg, prior, predictor, h, z, pred, tgt) -> torch.Tensor:
             h, lambda idx, codes: shift_cost(predictor(h[idx], codes), tgt[idx], pred[idx], *dist)
         )
     return prior_score_loss(prior.log_prob(h, z), loo_cost(pred, tgt, *dist))  # classical priors, ideal QCBM
+
+
+class RunLog:
+    """Appends every logged dict to <run dir>/log.jsonl (scripts/run_grid.py reads it for progress.md) and forwards it
+    to wandb when that is enabled."""
+
+    def __init__(self, path: Path, run):
+        self.path, self.run = path, run
+
+    def log(self, d: dict) -> None:
+        with open(self.path, "a") as f:
+            f.write(json.dumps({**d, "time": round(time.time(), 1)}) + "\n")
+        self.run.log(d)
+
+    def finish(self) -> None:
+        self.run.finish()
 
 
 def _visreg_views(v: torch.Tensor, cfg, it: int) -> torch.Tensor:
@@ -160,8 +177,10 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
             ckpt_path,
         )
 
-    log = wandb.init(mode=cfg.wandb.mode, project=cfg.wandb.project, dir=str(out_dir),
-                     config=OmegaConf.to_container(cfg, resolve=True))  # fmt: skip
+    w = cfg.wandb
+    named = {"name": w.name, "id": f"{w.group}-{w.name}" if w.group else w.name, "resume": "allow"} if w.name else {}
+    log = RunLog(out_dir / "log.jsonl", wandb.init(mode=w.mode, project=w.project, entity=w.entity or None, group=w.group or None, dir=str(out_dir),
+                     config=OmegaConf.to_container(cfg, resolve=True), **named))  # fmt: skip
     bench = build_benchmark(cfg, device)
 
     for it in range(start, t.iters + 1):

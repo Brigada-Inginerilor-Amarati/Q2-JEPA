@@ -46,6 +46,7 @@ _CHECK_T = np.linspace(-2.0, 9.0, 221)  # 0.05 s
 S_WINDOW = (-75.0, 60.0)
 SIGMA = 1.25  # px; provisional, final value set by the render check (dataset spec section 8)
 COLUMN = 31.5  # px; provisional, same check
+SNAKE_MARGIN = 3.0  # px between the snake layout's path and the image edge
 
 
 def schedule_acc(schedule, v0: np.ndarray) -> np.ndarray:
@@ -115,16 +116,43 @@ def s_to_row(s: torch.Tensor) -> torch.Tensor:
     return (S_WINDOW[1] - s) / (S_WINDOW[1] - S_WINDOW[0]) * 63
 
 
-def render_agent_clip(s: torch.Tensor) -> torch.Tensor:
+def s_to_path(s: torch.Tensor, bands: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """(row, column) of position s (m) on a snake path: `bands` horizontal runs over columns 3..60 (kept SNAKE_MARGIN
+    px from the edges so blobs aren't cut), joined at alternate ends by vertical runs of 64 / bands px, read like text
+    (left to right, then right to left). Motion stays continuous, and the path is ~8x longer than one column
+    (8 bands: ~0.27 m/px instead of 2.1)."""
+    run, gap = 63.0 - 2 * SNAKE_MARGIN, 64 / bands
+    per, total = run + gap, bands * run + (bands - 1) * gap
+    u = ((s - S_WINDOW[0]) / (S_WINDOW[1] - S_WINDOW[0]) * total).clamp(0, total)
+    band = torch.clamp(torch.div(u, per, rounding_mode="floor"), max=bands - 1)
+    r = u - band * per
+    forward = band % 2 == 0
+    centre = band * gap + (gap - 1) / 2
+    on_run = r <= run
+    col = torch.where(on_run, torch.where(forward, r, run - r), torch.where(forward, run, 0.0))
+    row = torch.where(on_run, centre, centre + (r - run))
+    return row, col + SNAKE_MARGIN
+
+
+def render_agent_clip(s: torch.Tensor, layout: str = "column", bands: int = 8) -> torch.Tensor:
     """Clip (..., 3, 64, 64) of one car from s (..., 3) in metres, on s's device.
 
-    World to pixel: row = s_to_row(s) on pixel centres 0..63, column fixed at COLUMN. Frame f is one Gaussian blob of
-    peak amplitude 1 at s[..., f], evaluated analytically, so sub-pixel position survives. Used for observations
-    (t = -2, -1, 0) and futures (t = 3, 6, 9) alike.
+    layout "column": row = s_to_row(s) on pixel centres 0..63, column fixed at COLUMN (~2.1 m/px).
+    layout "snake": the lane wraps over `bands` rows (s_to_path), ~0.25 m/px at 8 bands.
+    Frame f is one Gaussian blob of peak amplitude 1 at s[..., f], evaluated analytically, so sub-pixel position
+    survives. Used for observations (t = -2, -1, 0) and futures (t = 3, 6, 9) alike.
     """
     grid = torch.arange(64, dtype=torch.float32, device=s.device)
-    rows = (grid - s_to_row(s.float())[..., None]) ** 2
-    return torch.exp(-(rows[..., None] + (grid - COLUMN) ** 2) / (2 * SIGMA**2))
+    s = s.float()
+    if layout == "column":
+        row, col = s_to_row(s), torch.full_like(s, COLUMN)
+    elif layout == "snake":
+        row, col = s_to_path(s, bands)
+    else:
+        raise ValueError(f"unknown HEP18 layout {layout!r}")
+    rows = (grid - row[..., None]) ** 2
+    cols = (grid - col[..., None]) ** 2
+    return torch.exp(-(rows[..., :, None] + cols[..., None, :]) / (2 * SIGMA**2))
 
 
 class HEP18(Dataset):
