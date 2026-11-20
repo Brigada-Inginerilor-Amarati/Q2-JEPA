@@ -197,6 +197,10 @@ Gate before building HQViT: time one forward pass (and one option-B backward pas
 fit, the fallbacks are, in order: batching patch circuits inside one CUDA-Q call (`cudaq.get_state` over
 argument lists, or `nvidia-mqpu`), fewer blocks, then a smaller batch — never option C.
 
+**Gate result (2026-11-20, T4):** ~25 h and ~29 Colab units per HQViT run in fp32; equivalence tests pass on
+`nvidia` in fp64. Details, fp32 test tolerances and the `quantum.precision` option:
+[GPU gate spec](2026-11-20-q2jepa-gpu-gate.md).
+
 Equivalence test required: option-B gradients match finite differences and option-A parameter shift on a
 small case, on both `qpp-cpu` and `nvidia`.
 

@@ -53,7 +53,7 @@ def bench_step(target: str, encoder: str, prior: str, steps: int = 3, overrides:
             overrides=["+experiment=phase2", f"encoder={encoder}", f"prior={prior}", f"quantum.target={target}",
                        *overrides],
         )  # fmt: skip
-    set_target(cfg.quantum.target)
+    set_target(cfg.quantum.target, cfg.quantum.precision)
     device = resolve_device(cfg.trainer.device)
     groups, opt = build_models(cfg, device)
     enc, t, e = groups["encoder"][0], cfg.trainer, cfg.encoder

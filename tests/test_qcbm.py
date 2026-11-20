@@ -5,6 +5,7 @@ import torch
 
 from q2jepa.prior.codes import bits_to_index, index_to_bits
 from q2jepa.prior.qcbm import QCBMPrior
+from q2jepa.quantum import is_fp32
 from q2jepa.quantum.bridge import BornProbs
 
 ALL_CODES = index_to_bits(torch.arange(8), 3)
@@ -35,7 +36,8 @@ def test_log_prob_normalizes_and_matches_samples(entangled):
         p.net[-1].bias.uniform_(-1, 1)  # move away from the near-product initialization
     h = torch.randn(2, 64, dtype=torch.float64)
     probs = p.log_prob(h, ALL_CODES.expand(2, 8, 3).double()).exp()
-    torch.testing.assert_close(probs.sum(-1), torch.ones(2, dtype=torch.float64))
+    tol = {"atol": 1e-6, "rtol": 1e-6} if is_fp32() else {}  # fp32 (nvidia default): sums are 1 +- ~2e-7
+    torch.testing.assert_close(probs.sum(-1), torch.ones(2, dtype=torch.float64), **tol)
     z = p.sample(h, 20000)
     freq = torch.stack([torch.bincount(bits_to_index(z[b]), minlength=8) / 20000 for b in range(2)])
     assert (0.5 * (freq.double() - probs.detach()).abs().sum(-1) < 0.02).all()
@@ -54,13 +56,14 @@ def test_born_probs_gradient_is_exact():
     a = torch.empty(2, 3, 3, dtype=torch.float64).uniform_(-math.pi, math.pi).requires_grad_()
     w = torch.randn(2, 8, dtype=torch.float64)
     (BornProbs.apply(a, [[(0, 1)], [(1, 2)]]) * w).sum().backward()
-    eps, num = 1e-6, torch.zeros_like(a)
+    # fp32 (nvidia default): rounding swamps tiny steps, so use a larger step and tolerance, as in test_hqvit_kernels.
+    (eps, atol, rtol), num = ((1e-2, 2e-2, 2e-2) if is_fp32() else (1e-6, 1e-6, 1e-5)), torch.zeros_like(a)
     for idx in torch.cartesian_prod(*(torch.arange(s) for s in a.shape)):
         d = torch.zeros_like(a)
         d[tuple(idx)] = eps
         f = lambda x: (BornProbs.apply(x, [[(0, 1)], [(1, 2)]]) * w).sum()
         num[tuple(idx)] = (f(a.detach() + d) - f(a.detach() - d)) / (2 * eps)
-    torch.testing.assert_close(a.grad, num, atol=1e-6, rtol=1e-5)
+    torch.testing.assert_close(a.grad, num, atol=atol, rtol=rtol)
 
 
 def test_parameter_shift_estimate_matches_exact_gradient():

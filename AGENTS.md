@@ -33,8 +33,8 @@ The README describes the target. What actually exists today:
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
 | Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | done; used for equivalence tests and the benchmark |
-| HQViT encoder (`encoder/hqvit.py`, `quantum/hqvit.py`, `encoder=hqvit`; inherits `vit.yaml`) | built and CPU-tested; **not trained** — too slow on CPU, needs the T4 timing gate (phase-2 spec §6) |
-| QCBM priors: entangled / product / frozen (`prior/qcbm.py`, `quantum/bridge.py`, `prior=*_qcbm`); parameter shift + ideal reference (`quantum.grad`) | done; not yet verified on `nvidia` |
+| HQViT encoder (`encoder/hqvit.py`, `quantum/hqvit.py`, `encoder=hqvit`; inherits `vit.yaml`) | built and CPU-tested; **not trained** — too slow on CPU. T4 gate measured 2026-11-20: ~25 h per run in fp32 ([GPU gate spec](docs/superpowers/specs/2026-11-20-q2jepa-gpu-gate.md)) |
+| QCBM priors: entangled / product / frozen (`prior/qcbm.py`, `quantum/bridge.py`, `prior=*_qcbm`); parameter shift + ideal reference (`quantum.grad`) | done; verified on `nvidia` T4 in fp64 (2026-11-20); `quantum.precision` selects fp32/fp64 |
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
 | Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
 | Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
