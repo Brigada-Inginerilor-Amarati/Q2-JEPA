@@ -17,6 +17,8 @@ Testele cuantice rulate pe `nvidia`:
 | `test_born`, `test_attention_equivalence` | fp32 (implicit) | 14 passed |
 | `test_qcbm`, `test_hqvit_kernels`, `test_hqvit` | fp32 (implicit) | 18 passed, **5 failed** |
 | `test_qcbm`, `test_hqvit_kernels`, `test_hqvit` | **fp64** | **23 passed** |
+| toate 5, după acest branch (`25f21c2`) | fp32 | **37 passed** |
+| toate 5, după acest branch (`25f21c2`) | fp64 | **37 passed** |
 
 **Concluzie:** circuitele QCBM și HQViT sunt corecte pe GPU. E prima verificare a lor pe `nvidia`; până acum
 `notebooks/colab_gpu.ipynb` rula doar primele două fișiere de test. Cele 5 eșecuri vin din testele însele, care
@@ -32,8 +34,8 @@ fuseseră scrise doar pentru `qpp-cpu`, adică fp64:
 **Ce s-a schimbat** (branch `gpu-gate-precision`; testele existente pe CPU rămân exact la fel):
 - Cele 5 teste folosesc tiparul care exista deja în `test_hqvit_kernels.py`: toleranțe mai largi și pas mai mare
   la diferențe finite doar când `is_fp32()`. Pe `qpp-cpu` și pe `nvidia` fp64 se verifică la fel de strict ca înainte.
-  **Toleranțele noi pentru fp32 nu au rulat încă pe `nvidia`:** se verifică rulând celula 4 de pe acest branch,
-  înainte de merge.
+  **Verificat pe `nvidia` (T4, commit `25f21c2`):** toate cele 5 fișiere de test cuantic trec, cu 37 passed în fp32
+  și 37 passed în fp64 (`Q2JEPA_CUDAQ_PRECISION=fp64`).
 - Verificarea strictă a gradienților (diferențe finite cu ε = 10⁻⁶) rămâne doar în fp64. În fp32 testele sunt mai
   largi (ε = 10⁻², toleranță 2·10⁻²), deci antrenarea în fp32 se bazează pe faptul că aceleași circuite trec strict
   în fp64.
