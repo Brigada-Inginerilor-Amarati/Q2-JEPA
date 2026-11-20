@@ -40,6 +40,7 @@ class PredictorCfg:
 @dataclass
 class QuantumCfg:
     target: str = "qpp-cpu"
+    precision: str = "default"  # nvidia only: "fp32" (its default) or "fp64"; see the 2026-11-20 GPU gate spec
     shots: int = 256
     readout_flip: float = 0.005
     shift_obs: int = 8
@@ -97,6 +98,7 @@ class DatasetCfg:
     n_train: int = 800
     n_dev: int = 80
     n_test: int = 80
+    fold: int = 0  # d3il only: which of the three folds
 
 
 @dataclass

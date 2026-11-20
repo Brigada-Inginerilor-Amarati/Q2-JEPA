@@ -80,15 +80,15 @@ def _identity(cfg) -> str:
     return json.dumps(out, sort_keys=True)
 
 
-def run(cfg, out_dir: Path) -> dict[str, float]:
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    set_target(cfg.quantum.target)
-    np.random.seed(cfg.seed)
-    t = cfg.trainer
-    device = torch.device("cuda" if t.device == "auto" and torch.cuda.is_available() else
-                          "cpu" if t.device == "auto" else t.device)  # fmt: skip
+def resolve_device(name: str) -> torch.device:
+    if name == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(name)
 
+
+def build_models(cfg, device: torch.device) -> tuple[dict, torch.optim.Optimizer]:
+    """Encoder, predictor, prior and their AdamW, initialized from `cfg.seed`. Groups map name -> (module, lr)."""
+    t = cfg.trainer
     _seed(cfg.seed, 0)
     encoder = build_encoder(cfg.encoder).to(device)
     predictor = Predictor(cfg.encoder.d, cfg.prior.n_bits, cfg.predictor.width).to(device)
@@ -97,6 +97,45 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
     opt = torch.optim.AdamW(
         [{"params": m.parameters(), "lr": lr, "name": n} for n, (m, lr) in groups.items()], weight_decay=t.weight_decay
     )
+    return groups, opt
+
+
+def train_step(cfg, groups: dict, opt: torch.optim.Optimizer, obs: torch.Tensor, fut: torch.Tensor, it: int):
+    """One world-model update at iteration `it` (Q-JEPA App. A.3). Seeding and the learning-rate schedule are
+    the caller's; `scripts/bench_encoder_step.py` times exactly this function."""
+    (encoder, _), (predictor, _), (prior, _) = groups["encoder"], groups["predictor"], groups["prior"]
+    e, t = cfg.encoder, cfg.trainer
+    phase = stage(it, t.warmup_repr, t.warmup_pred)
+    h = encoder(prepare(obs, e.res, e.input_norm, e.input_scale))
+    tgt = encoder(prepare(fut, e.res, e.input_norm, e.input_scale))
+    loss = t.lambda_reg * (visreg(h, cfg.visreg, it) + visreg(tgt, cfg.visreg, it)) / 2
+    if phase != "repr":
+        z = prior.sample(h.detach(), t.k_train)
+        pred = predictor(h, z)
+        loss = loss + energy_score(pred, tgt.detach())
+        if phase == "full":
+            loss = loss + _prior_loss(prior, predictor, h.detach(), z, pred.detach(), tgt.detach())
+    opt.zero_grad(set_to_none=True)
+    loss.backward()
+    for module, _ in groups.values():
+        torch.nn.utils.clip_grad_norm_(module.parameters(), t.clip)
+    opt.step()
+    return loss
+
+
+def run(cfg, out_dir: Path) -> dict[str, float]:
+    if cfg.dataset.name != "mmnist":  # remove when the benchmark's data, readout and metrics are wired in here
+        raise NotImplementedError(
+            f"dataset {cfg.dataset.name!r} is not wired into training; this would train MovingMNIST"
+        )
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    set_target(cfg.quantum.target, cfg.quantum.precision)
+    np.random.seed(cfg.seed)
+    t = cfg.trainer
+    device = resolve_device(t.device)
+    groups, opt = build_models(cfg, device)
+    encoder, predictor, prior = (groups[n][0] for n in ("encoder", "predictor", "prior"))
 
     ckpt_path = out_dir / "ckpt.pt"
     identity = _identity(cfg)
@@ -128,22 +167,9 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
 
     for it in range(start, t.iters + 1):
         _seed(cfg.seed, it)
-        phase = stage(it, t.warmup_repr, t.warmup_pred)
         opt.param_groups[0]["lr"] = t.lr_enc if it <= t.warmup_repr else t.lr_enc_later
         obs, fut = _batch(train_ds, t.batch, device)
-        h, tgt = encoder(prepare(obs, res, norm, scale)), encoder(prepare(fut, res, norm, scale))
-        loss = t.lambda_reg * (visreg(h, cfg.visreg, it) + visreg(tgt, cfg.visreg, it)) / 2
-        if phase != "repr":
-            z = prior.sample(h.detach(), t.k_train)
-            pred = predictor(h, z)
-            loss = loss + energy_score(pred, tgt.detach())
-            if phase == "full":
-                loss = loss + _prior_loss(prior, predictor, h.detach(), z, pred.detach(), tgt.detach())
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        for module, _ in groups.values():
-            torch.nn.utils.clip_grad_norm_(module.parameters(), t.clip)
-        opt.step()
+        loss = train_step(cfg, groups, opt, obs, fut, it)
         if it % 50 == 0:
             log.log({"loss": loss.item(), "it": it})
         if it == t.iters or it % t.ckpt_every == 0:

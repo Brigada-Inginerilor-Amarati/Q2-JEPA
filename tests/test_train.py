@@ -124,3 +124,10 @@ def test_resume_during_readout_matches_uninterrupted(tmp_path):
     (tmp_path / "r" / "readout.pt").unlink()  # session died after world model, before readout finished
     (tmp_path / "r" / "metrics.json").unlink()
     assert run(cfg, tmp_path / "r") == ref
+
+
+@pytest.mark.parametrize("name", ["hep18", "d3il"])
+def test_unwired_dataset_refuses_to_train(tmp_path, name):
+    cfg = _cfg([f"dataset={name}"])
+    with pytest.raises(NotImplementedError, match=name):
+        run(cfg, tmp_path)
