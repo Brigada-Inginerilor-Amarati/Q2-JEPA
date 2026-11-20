@@ -69,6 +69,8 @@ From the spec; breaking any of these makes results invalid even if the code runs
   new training script.
 - No hardware training; IBM QPUs are inference-only on the trained Born prior.
 - The notebook stays thin: it installs the package and calls into it. No logic lives there.
+- Docs, specs, plans, results, comments and commit messages are in **English**. Keep them short and plain:
+  facts, tables and commands; no padding, no restating other docs.
 
 ## 4. Local dev loop (Mac, CPU)
 
