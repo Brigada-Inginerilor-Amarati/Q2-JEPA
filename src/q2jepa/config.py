@@ -30,11 +30,13 @@ class PriorCfg:
     components: int = 2  # mixture only
     offset_init: float = 0.1  # QCBM: std of the body-angle offsets; Q-JEPA §3.2 says only "small"
     layers: int = 2  # QCBM body layers (brickwork CNOTs; MovingMNIST: CNOT(0,1), CNOT(1,2))
+    layout: str = "brickwork"  # QCBM CNOTs: "brickwork" (App. B, C) or "hep18_grid" (App. C, 4 rows of 3 qubits)
 
 
 @dataclass
 class PredictorCfg:
     width: int = 96
+    kind: str = "shared"  # "shared" (Eqs. 5-6, LN output), "agent_local" (HEP18), "scaled" (D3IL, Eq. 15)
 
 
 @dataclass
@@ -63,6 +65,12 @@ class TrainerCfg:
     weight_decay: float = 1e-5
     clip: float = 5.0
     lambda_reg: float = 4 / 3
+    lambda_change: float = 0.0  # HEP18: weight of R(t - h) (App. F.3: 2/3)
+    energy_beta: float = 1.0  # distance rho_{beta,eps} (Eq. 18); 1, 0 = Euclidean / sqrt(d)
+    energy_eps: float = 0.0
+    finetune_iters: int = 0  # D3IL: final predictor/prior stage on real segment windows (App. B.3: 1000)
+    lr_finetune: float = 1e-4
+    finetune_windows: int = 16  # windows of 3 consecutive pairs per batch
     device: str = "auto"  # cuda if available, else cpu
     ckpt_every: int = 500
     stop_after: int = 0  # end this session after N world-model iterations (Colab chunking); 0 = run to the end
@@ -83,6 +91,8 @@ class ReadoutCfg:
     lr: float = 2e-3
     weight_decay: float = 0.01
     clip: float = 5.0
+    iters_low: int = 0  # D3IL: further steps at lr_low after `iters` (App. B.3: 2000 at 2e-4)
+    lr_low: float = 2e-4
 
 
 @dataclass
@@ -90,6 +100,9 @@ class EvalCfg:
     n_obs: int = 80
     k_eval: int = 128
     split: str = "test"  # "dev" for tuning/selection (phase-2 F5); writes metrics_dev.json instead of metrics.json
+    rollouts: int = 384  # D3IL: recursive continuations from the common start (App. B.4: 3 x 128)
+    max_calls: int = 16  # D3IL: predictions per rollout
+    subset: int = 60  # D3IL: accepted-path budget for expected route coverage and TV
 
 
 @dataclass
@@ -100,6 +113,7 @@ class DatasetCfg:
     n_dev: int = 80
     n_test: int = 80
     fold: int = 0  # d3il only: which of the three folds
+    agents: int = 1  # encoded separately and concatenated into h (HEP18: 4 cars, d = 4 x encoder.d)
 
 
 @dataclass

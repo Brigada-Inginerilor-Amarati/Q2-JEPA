@@ -18,10 +18,9 @@ import torch
 from hydra import compose, initialize_config_dir
 
 import q2jepa.config  # noqa: F401  (registers the schema)
-from q2jepa.data.mmnist import StochasticMovingMNIST
-from q2jepa.encoder import prepare
+from q2jepa.benchmarks import build_benchmark
 from q2jepa.quantum import get_target, set_target
-from q2jepa.train import _batch, build_models, resolve_device, train_step, use_hqvit_backend
+from q2jepa.train import build_models, resolve_device, train_step, use_hqvit_backend
 
 CONF = str(Path(__file__).resolve().parents[1] / "conf")
 
@@ -46,28 +45,31 @@ def _time(fn, steps: int, device: torch.device) -> float:
     return (time.perf_counter() - start) / steps
 
 
-def bench_step(target: str, encoder: str, prior: str, steps: int = 3, overrides: list[str] = ()) -> dict:
+def bench_step(
+    target: str, encoder: str, prior: str, steps: int = 3, overrides: list[str] = (), experiment: str = "phase2"
+) -> dict:
     with initialize_config_dir(config_dir=CONF, version_base="1.3"):
         cfg = compose(
             "config",
-            overrides=["+experiment=phase2", f"encoder={encoder}", f"prior={prior}", f"quantum.target={target}",
+            overrides=[f"+experiment={experiment}", f"encoder={encoder}", f"prior={prior}", f"quantum.target={target}",
                        *overrides],
         )  # fmt: skip
     set_target(cfg.quantum.target, cfg.quantum.precision)
     device = resolve_device(cfg.trainer.device)
     groups, opt = build_models(cfg, device)
     enc, t, e = groups["encoder"][0], cfg.trainer, cfg.encoder
+    bench = build_benchmark(cfg, device)
     hqvit_train = cfg.quantum.hqvit_train if encoder == "hqvit" else "cudaq"  # override applies to hqvit only
     use_hqvit_backend(enc, hqvit_train)  # as in run(): readout timing below uses it too
     torch.manual_seed(cfg.seed)
-    obs, fut = _batch(StochasticMovingMNIST("train", cfg.dataset.root, n_obs=cfg.dataset.n_train), t.batch, device)
+    batch = bench.batch(t.batch)
 
     def readout_encode() -> None:
         with torch.no_grad():
-            enc(prepare(obs, e.res, e.input_norm, e.input_scale)), enc(prepare(fut, e.res, e.input_norm, e.input_scale))
+            bench.encode(enc, batch)
 
-    repr_s = _time(lambda: train_step(cfg, groups, opt, obs, fut, 1), steps, device)
-    full_s = _time(lambda: train_step(cfg, groups, opt, obs, fut, t.warmup_pred + 1), steps, device)
+    repr_s = _time(lambda: train_step(cfg, groups, opt, bench, batch, 1), steps, device)
+    full_s = _time(lambda: train_step(cfg, groups, opt, bench, batch, t.warmup_pred + 1), steps, device)
     readout_s = _time(readout_encode, steps, device)
     return {
         "encoder": encoder,
@@ -91,6 +93,7 @@ def main() -> None:
     ap.add_argument("--prior", action="append", help="prior config name (repeatable; default softmax_categorical)")
     ap.add_argument("--steps", type=int, default=3, help="timed steps per measurement, after one warm-up step")
     ap.add_argument("--cu-per-hour", type=float, default=0.0, help="Colab compute units per hour for this GPU")
+    ap.add_argument("--experiment", default="phase2", help="preset: phase2 (MovingMNIST), hep18 or d3il")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="extra Hydra override")
     args = ap.parse_args()
     cu = args.cu_per_hour
@@ -99,7 +102,7 @@ def main() -> None:
     print("|---" * (10 + bool(cu)) + "|")
     for enc in args.encoder or ["cnn", "vit", "hqvit"]:
         for prior in args.prior or ["softmax_categorical"]:
-            r = bench_step(args.target, enc, prior, args.steps, args.set)
+            r = bench_step(args.target, enc, prior, args.steps, args.set, args.experiment)
             print(f"| {r['encoder']} | {r['prior']} | {r['target']} | {r['hqvit_train']} | {r['device']} | {r['batch']} | "
                   f"{r['repr_s']:.3f} | {r['full_s']:.3f} | {r['readout_s']:.3f} | {r['est_hours']:.2f} |"
                   + (f" {r['est_hours'] * cu:.1f} |" if cu else ""), flush=True)  # fmt: skip

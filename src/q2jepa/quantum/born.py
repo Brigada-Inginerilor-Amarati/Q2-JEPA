@@ -43,6 +43,24 @@ def brickwork_layers(n: int, layers: int) -> list[list[tuple[int, int]]]:
     return [[(j, j + 1) for j in range(layer % 2, n - 1, 2)] for layer in range(layers)]
 
 
+def hep18_grid_layers() -> list[list[tuple[int, int]]]:
+    """Q-JEPA App. C, HEP18: 12 qubits as 4 rows (cars N, W, S, E) x 3 columns, qubit = 3 * row + column.
+
+    Layer 1: columns (0, 1) in every row; 2: rows (0, 1) and (2, 3) at every column; 3: columns (1, 2) in every row;
+    4: rows (1, 2) and (3, 0) at every column. 20 CNOTs, control first.
+    """
+
+    def q(row: int, col: int) -> int:
+        return 3 * row + col
+
+    return [
+        [(q(r, 0), q(r, 1)) for r in range(4)],
+        [(q(a, c), q(b, c)) for c in range(3) for a, b in ((0, 1), (2, 3))],
+        [(q(r, 1), q(r, 2)) for r in range(4)],
+        [(q(a, c), q(b, c)) for c in range(3) for a, b in ((1, 2), (3, 0))],
+    ]
+
+
 def sample_codes(
     angles: np.ndarray, cnot_layers, shots: int, rng: np.random.Generator, seed: int | None = None
 ) -> np.ndarray:

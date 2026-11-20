@@ -1,11 +1,11 @@
-"""3-stage JEPA training, frozen readout and evaluation (Q-JEPA §3, App. A.3).
+"""3-stage JEPA training, frozen readout and evaluation (Q-JEPA §3, App. A.3), for every benchmark.
 
 Resumable for Colab: every iteration reseeds from (seed, it), so a checkpoint only needs model and
-optimizer state; batches are drawn with torch.randint, not from a DataLoader iterator.
+optimizer state; batches are drawn with torch.randint, not from a DataLoader iterator. Benchmark-specific
+batches, readouts and metrics live in q2jepa/benchmarks/.
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -16,18 +16,17 @@ import wandb
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 
+from q2jepa.benchmarks import build_benchmark, scene_dim
 from q2jepa.config import Config  # also registers the schema
-from q2jepa.data.mmnist import StochasticMovingMNIST
-from q2jepa.encoder import build_encoder, prepare
+from q2jepa.encoder import build_encoder
 from q2jepa.losses import energy_score, loo_cost, prior_score_loss, shift_cost, visreg
-from q2jepa.metrics import mmnist_metrics
-from q2jepa.predictor import Predictor
+from q2jepa.predictor import build_predictor
 from q2jepa.prior.classical import build_prior
 from q2jepa.quantum import set_target
-from q2jepa.readout.mmnist import TranslationReadout, readout_loss, render
+from q2jepa.seeding import EVAL_SEED_OFFSET, READOUT_SEED_OFFSET, reseed, save_atomic
 
-READOUT_SEED_OFFSET = 10_000_000
-EVAL_SEED_OFFSET = 20_000_000
+_seed, _save = reseed, save_atomic  # old names, used by scripts
+__all__ = ["EVAL_SEED_OFFSET", "READOUT_SEED_OFFSET", "build_models", "resolve_device", "run", "train_step"]
 
 
 def stage(it: int, warmup_repr: int, warmup_pred: int) -> Literal["repr", "pred", "full"]:
@@ -36,30 +35,23 @@ def stage(it: int, warmup_repr: int, warmup_pred: int) -> Literal["repr", "pred"
     return "pred" if it <= warmup_pred else "full"
 
 
-def _seed(seed: int, it: int) -> None:
-    torch.manual_seed(seed * 1_000_003 + it)
-
-
-def _batch(ds: StochasticMovingMNIST, size: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    items = [ds[i] for i in torch.randint(len(ds), (size,)).tolist()]
-    obs = torch.stack([x["obs"] for x in items]).to(device)
-    fut = torch.stack([x["fut"] for x in items]).to(device)
-    return obs, fut
-
-
-def _prior_loss(prior, predictor, h, z, pred, tgt) -> torch.Tensor:
+def _prior_loss(cfg, prior, predictor, h, z, pred, tgt) -> torch.Tensor:
     """Separate prior update (Q-JEPA App. A.4 step 4): encoder outputs, targets and predictor are held fixed."""
     if not getattr(prior, "trainable", True):
         return torch.zeros((), device=h.device)  # Frozen-QCBM
+    dist = (cfg.trainer.energy_beta, cfg.trainer.energy_eps)
     if getattr(prior, "grad", None) == "shift":
-        return prior.shift_surrogate(h, lambda idx, codes: shift_cost(predictor(h[idx], codes), tgt[idx], pred[idx]))
-    return prior_score_loss(prior.log_prob(h, z), loo_cost(pred, tgt))  # classical priors and ideal-gradient QCBM
+        return prior.shift_surrogate(
+            h, lambda idx, codes: shift_cost(predictor(h[idx], codes), tgt[idx], pred[idx], *dist)
+        )
+    return prior_score_loss(prior.log_prob(h, z), loo_cost(pred, tgt, *dist))  # classical priors, ideal QCBM
 
 
-def _save(obj: dict, path: Path) -> None:
-    tmp = path.with_suffix(".tmp")
-    torch.save(obj, tmp)
-    os.replace(tmp, path)
+def _visreg_views(v: torch.Tensor, cfg, it: int) -> torch.Tensor:
+    """R over a batch (B, d), or averaged over the J views of (B, J, d) (App. F.3)."""
+    if v.dim() == 2:
+        return visreg(v, cfg, it)
+    return torch.stack([visreg(v[:, j], cfg, it) for j in range(v.shape[1])]).mean()
 
 
 _NOT_IDENTITY = {"trainer": ("stop_after", "ckpt_every", "device")}
@@ -97,10 +89,11 @@ def use_hqvit_backend(encoder, name: str) -> None:
 def build_models(cfg, device: torch.device) -> tuple[dict, torch.optim.Optimizer]:
     """Encoder, predictor, prior and their AdamW, initialized from `cfg.seed`. Groups map name -> (module, lr)."""
     t = cfg.trainer
-    _seed(cfg.seed, 0)
+    reseed(cfg.seed, 0)
+    d = scene_dim(cfg)
     encoder = build_encoder(cfg.encoder).to(device)
-    predictor = Predictor(cfg.encoder.d, cfg.prior.n_bits, cfg.predictor.width).to(device)
-    prior = build_prior(cfg.prior, cfg.encoder.d, cfg.quantum).to(device)
+    predictor = build_predictor(cfg.predictor, d, cfg.prior.n_bits, cfg.dataset.agents).to(device)
+    prior = build_prior(cfg.prior, d, cfg.quantum).to(device)
     groups = {"encoder": (encoder, t.lr_enc), "predictor": (predictor, t.lr_pred), "prior": (prior, t.lr_prior)}
     opt = torch.optim.AdamW(
         [{"params": m.parameters(), "lr": lr, "name": n} for n, (m, lr) in groups.items()], weight_decay=t.weight_decay
@@ -108,21 +101,23 @@ def build_models(cfg, device: torch.device) -> tuple[dict, torch.optim.Optimizer
     return groups, opt
 
 
-def train_step(cfg, groups: dict, opt: torch.optim.Optimizer, obs: torch.Tensor, fut: torch.Tensor, it: int):
+def train_step(cfg, groups: dict, opt: torch.optim.Optimizer, bench, batch, it: int):
     """One world-model update at iteration `it` (Q-JEPA App. A.3). Seeding and the learning-rate schedule are
     the caller's; `scripts/bench_encoder_step.py` times exactly this function."""
     (encoder, _), (predictor, _), (prior, _) = groups["encoder"], groups["predictor"], groups["prior"]
-    e, t = cfg.encoder, cfg.trainer
+    t = cfg.trainer
     phase = stage(it, t.warmup_repr, t.warmup_pred)
-    h = encoder(prepare(obs, e.res, e.input_norm, e.input_scale))
-    tgt = encoder(prepare(fut, e.res, e.input_norm, e.input_scale))
-    loss = t.lambda_reg * (visreg(h, cfg.visreg, it) + visreg(tgt, cfg.visreg, it)) / 2
+    h, tgt = bench.encode(encoder, batch)
+    loss = t.lambda_reg * (visreg(h, cfg.visreg, it) + _visreg_views(tgt, cfg.visreg, it)) / 2
+    if t.lambda_change:  # HEP18: R(t - h) per target view (App. F.3)
+        change = tgt - (h if tgt.dim() == 2 else h[:, None])
+        loss = loss + t.lambda_change * _visreg_views(change, cfg.visreg, it)
     if phase != "repr":
         z = prior.sample(h.detach(), t.k_train)
         pred = predictor(h, z)
-        loss = loss + energy_score(pred, tgt.detach())
+        loss = loss + energy_score(pred, tgt.detach(), t.energy_beta, t.energy_eps)
         if phase == "full":
-            loss = loss + _prior_loss(prior, predictor, h.detach(), z, pred.detach(), tgt.detach())
+            loss = loss + _prior_loss(cfg, prior, predictor, h.detach(), z, pred.detach(), tgt.detach())
     opt.zero_grad(set_to_none=True)
     loss.backward()
     for module, _ in groups.values():
@@ -132,10 +127,6 @@ def train_step(cfg, groups: dict, opt: torch.optim.Optimizer, obs: torch.Tensor,
 
 
 def run(cfg, out_dir: Path) -> dict[str, float]:
-    if cfg.dataset.name != "mmnist":  # remove when the benchmark's data, readout and metrics are wired in here
-        raise NotImplementedError(
-            f"dataset {cfg.dataset.name!r} is not wired into training; this would train MovingMNIST"
-        )
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     set_target(cfg.quantum.target, cfg.quantum.precision)
@@ -159,7 +150,7 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
         start = ck["it"] + 1
 
     def checkpoint(it: int) -> None:
-        _save(
+        save_atomic(
             {
                 **{n: m.state_dict() for n, (m, _) in groups.items()},
                 "opt": opt.state_dict(),
@@ -171,14 +162,12 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
 
     log = wandb.init(mode=cfg.wandb.mode, project=cfg.wandb.project, dir=str(out_dir),
                      config=OmegaConf.to_container(cfg, resolve=True))  # fmt: skip
-    train_ds = StochasticMovingMNIST("train", cfg.dataset.root, n_obs=cfg.dataset.n_train)
-    res, norm, scale = cfg.encoder.res, cfg.encoder.input_norm, cfg.encoder.input_scale
+    bench = build_benchmark(cfg, device)
 
     for it in range(start, t.iters + 1):
-        _seed(cfg.seed, it)
+        reseed(cfg.seed, it)
         opt.param_groups[0]["lr"] = t.lr_enc if it <= t.warmup_repr else t.lr_enc_later
-        obs, fut = _batch(train_ds, t.batch, device)
-        loss = train_step(cfg, groups, opt, obs, fut, it)
+        loss = train_step(cfg, groups, opt, bench, bench.batch(t.batch), it)
         if it % 50 == 0:
             log.log({"loss": loss.item(), "it": it})
         if it == t.iters or it % t.ckpt_every == 0:
@@ -190,43 +179,15 @@ def run(cfg, out_dir: Path) -> dict[str, float]:
 
     for module, _ in groups.values():
         module.requires_grad_(False)
-    _seed(cfg.seed, READOUT_SEED_OFFSET)  # readout init must not depend on whether the loop above ran
-    readout = TranslationReadout(cfg.encoder.d).to(device)
-    readout_path = out_dir / "readout.pt"
-    if readout_path.exists():
-        readout.load_state_dict(torch.load(readout_path, map_location=device, weights_only=True))
-    else:
-        r = cfg.readout
-        ropt = torch.optim.AdamW(readout.parameters(), lr=r.lr, weight_decay=r.weight_decay)
-        for it in range(1, r.iters + 1):
-            _seed(cfg.seed, READOUT_SEED_OFFSET + it)
-            obs, fut = _batch(train_ds, r.batch, device)
-            with torch.no_grad():
-                h, tgt = encoder(prepare(obs, res, norm, scale)), encoder(prepare(fut, res, norm, scale))
-            rloss = readout_loss(render(obs[:, 2], readout(h, tgt)), fut)
-            ropt.zero_grad(set_to_none=True)
-            rloss.backward()
-            torch.nn.utils.clip_grad_norm_(readout.parameters(), r.clip)
-            ropt.step()
-            if it % 50 == 0:
-                log.log({"readout_loss": rloss.item(), "readout_it": it})
-        _save(readout.state_dict(), readout_path)
+    readout = bench.fit_readout(cfg, encoder, out_dir, log)
+    bench.post_readout(cfg, groups, readout, out_dir, log)
 
     use_hqvit_backend(encoder, "cudaq")  # every reported number comes from the CUDA-Q circuits
-    _seed(cfg.seed, EVAL_SEED_OFFSET)
+    reseed(cfg.seed, EVAL_SEED_OFFSET)
     split = cfg.eval.split
     if split not in ("test", "dev"):
         raise ValueError(f"unknown eval split {split!r}")
-    n_split = cfg.dataset.n_test if split == "test" else cfg.dataset.n_dev
-    eval_obs = StochasticMovingMNIST(split, cfg.dataset.root, n_obs=n_split).unique_obs()
-    obs = eval_obs[: cfg.eval.n_obs].to(device)
-    k = cfg.eval.k_eval
-    with torch.no_grad():
-        h = encoder(prepare(obs, res, norm, scale))
-        pred = predictor(h, prior.sample(h, k))  # (B, K, d)
-        disp = readout(h.repeat_interleave(k, 0), pred.reshape(-1, pred.shape[-1])).reshape(len(obs), k, 3, 2)
-    per_obs = [mmnist_metrics(d) for d in disp.cpu().double().numpy()]
-    metrics = {key: float(np.mean([m[key] for m in per_obs])) for key in per_obs[0]}
+    metrics = bench.evaluate(cfg, encoder, predictor, prior, readout)
     # Keep each split's provenance next to its metrics: re-evaluating via the CLI overwrites .hydra/.
     (out_dir / f"eval_config_{split}.yaml").write_text(OmegaConf.to_yaml(cfg, resolve=True))
     (out_dir / ("metrics.json" if split == "test" else f"metrics_{split}.json")).write_text(

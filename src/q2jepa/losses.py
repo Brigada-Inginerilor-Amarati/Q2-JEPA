@@ -13,31 +13,44 @@ def _safe_sqrt(x: torch.Tensor) -> torch.Tensor:
     return torch.where(pos, torch.sqrt(torch.where(pos, x, torch.ones_like(x))), torch.zeros_like(x))
 
 
-def _rho(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-    return _safe_sqrt(((u - v) ** 2).sum(-1)) / math.sqrt(u.shape[-1])
+def _rho(u: torch.Tensor, v: torch.Tensor, beta: float = 1.0, eps: float = 0.0) -> torch.Tensor:
+    """rho_{beta,eps}(u, v) = (|u - v|^2 / d + eps^2)^(beta/2) - eps^beta (Eq. 18); beta = 1, eps = 0 is |u - v| / sqrt(d)."""
+    if beta == 1.0 and eps == 0.0:
+        return _safe_sqrt(((u - v) ** 2).sum(-1)) / math.sqrt(u.shape[-1])
+    return (((u - v) ** 2).sum(-1) / u.shape[-1] + eps**2) ** (beta / 2) - eps**beta
 
 
-def _pairwise(pred: torch.Tensor) -> torch.Tensor:
+def _to_targets(pred: torch.Tensor, target: torch.Tensor, beta: float, eps: float) -> torch.Tensor:
+    """(B, K) rho from each prediction to its target (B, d), or the mean over several targets (B, J, d)."""
+    if target.dim() == 2:
+        return _rho(pred, target[:, None], beta, eps)
+    return _rho(pred[:, :, None], target[:, None], beta, eps).mean(-1)
+
+
+def _pairwise(pred: torch.Tensor, beta: float = 1.0, eps: float = 0.0) -> torch.Tensor:
     """(B, K, K) rho between predictions, zero diagonal."""
     k = pred.shape[1]
-    return _rho(pred[:, :, None], pred[:, None]) * (1 - torch.eye(k, device=pred.device))
+    return _rho(pred[:, :, None], pred[:, None], beta, eps) * (1 - torch.eye(k, device=pred.device))
 
 
-def energy_score(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+def energy_score(pred: torch.Tensor, target: torch.Tensor, beta: float = 1.0, eps: float = 0.0) -> torch.Tensor:
+    """Eq. 7 with distance rho_{beta,eps}; target (B, d) or several futures (B, J, d), averaged (App. F.3)."""
     k = pred.shape[1]
-    fidelity = _rho(pred, target[:, None]).mean(1)
-    diversity = _pairwise(pred).sum((1, 2)) / (2 * k * (k - 1))
+    fidelity = _to_targets(pred, target, beta, eps).mean(1)
+    diversity = _pairwise(pred, beta, eps).sum((1, 2)) / (2 * k * (k - 1))
     return (fidelity - diversity).mean()
 
 
-def loo_cost(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+def loo_cost(pred: torch.Tensor, target: torch.Tensor, beta: float = 1.0, eps: float = 0.0) -> torch.Tensor:
     k = pred.shape[1]
-    return _rho(pred, target[:, None]) - _pairwise(pred).sum(2) / (k - 1)
+    return _to_targets(pred, target, beta, eps) - _pairwise(pred, beta, eps).sum(2) / (k - 1)
 
 
-def shift_cost(u: torch.Tensor, target: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+def shift_cost(
+    u: torch.Tensor, target: torch.Tensor, ref: torch.Tensor, beta: float = 1.0, eps: float = 0.0
+) -> torch.Tensor:
     """Eq. 11 cost of predictions u (b, M, d): rho(u, t) - E_{V~Q} rho(u, V), Q = reference predictions (b, K, d)."""
-    return _rho(u, target[:, None]) - _rho(u[:, :, None], ref[:, None]).mean(-1)
+    return _to_targets(u, target, beta, eps) - _rho(u[:, :, None], ref[:, None], beta, eps).mean(-1)
 
 
 def visreg_terms(v: torch.Tensor, n_proj: int = 128) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

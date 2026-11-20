@@ -18,7 +18,7 @@ from torch import nn
 
 from q2jepa.prior.codes import bits_to_index
 from q2jepa.quantum import bridge
-from q2jepa.quantum.born import brickwork_layers
+from q2jepa.quantum.born import brickwork_layers, hep18_grid_layers
 
 
 def _seed() -> int:
@@ -40,6 +40,7 @@ class QCBMPrior(nn.Module):
         shift_obs: int = 8,
         shift_coords: int = 9,
         offset_init: float = 0.1,
+        layout: str = "brickwork",
     ):
         super().__init__()
         if grad not in ("shift", "ideal"):
@@ -49,7 +50,12 @@ class QCBMPrior(nn.Module):
             raise ValueError("quantum.grad=ideal is the noise-free reference: set quantum.readout_flip=0")
         self.n_bits, self.layers, self.trainable, self.grad = n_bits, layers, trainable, grad
         self.shots, self.flip, self.shift_obs, self.shift_coords = shots, flip, shift_obs, shift_coords
-        self.cnots = brickwork_layers(n_bits, layers) if entangled else [[] for _ in range(layers)]
+        if layout == "hep18_grid" and (n_bits, layers) != (12, 4):
+            raise ValueError("prior.layout=hep18_grid needs n_bits=12 and layers=4")
+        if layout not in ("brickwork", "hep18_grid"):
+            raise ValueError(f"unknown prior.layout {layout!r}")
+        cnots = hep18_grid_layers() if layout == "hep18_grid" else brickwork_layers(n_bits, layers)
+        self.cnots = cnots if entangled else [[] for _ in range(layers)]
         self.net = nn.Sequential(nn.Linear(d, hidden), nn.SiLU(), nn.Linear(hidden, layers * n_bits))
         nn.init.zeros_(self.net[-1].weight)
         nn.init.zeros_(self.net[-1].bias)
@@ -104,5 +110,5 @@ def build_qcbm(cfg, d: int, quantum) -> QCBMPrior:
     entangled, trainable = kinds[cfg.name]
     return QCBMPrior(
         d, cfg.hidden, cfg.n_bits, cfg.layers, entangled, trainable, quantum.grad, quantum.shots,
-        quantum.readout_flip, quantum.shift_obs, quantum.shift_coords, cfg.offset_init,
+        quantum.readout_flip, quantum.shift_obs, quantum.shift_coords, cfg.offset_init, cfg.layout,
     )  # fmt: skip
