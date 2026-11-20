@@ -3,7 +3,7 @@
 Results of the HQViT timing gate from [phase-2 spec](2026-11-03-q2jepa-phase2-design.md) §6.
 
 **Platform:** Colab Pro, Tesla T4, ~1.15 units/h. `main` at `0ab636a`, CUDA-Q 0.16, target `nvidia`.
-**Not yet measured:** the adjoint HQViT backward (branch `hqvit-adjoint`). These timings use the older
+**Not yet measured:** the adjoint HQViT backward (`hqvit.adjoint_grads`). These timings use the older
 one-circuit-per-angle backward.
 
 ## 1. Correctness on GPU
