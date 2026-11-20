@@ -83,3 +83,27 @@ def hep18_metrics(
         "shuffled_validity": float(np.mean(shuffled)),
         "local_validity": float(np.mean(local)),
     }
+
+
+ROUTES = 24  # D3IL: 2 x 3 x 4 gaps (App. B.4)
+
+
+def expected_route_stats(counts: np.ndarray, subset: int) -> tuple[float, float]:
+    """Exact expected (routes covered, TV vs uniform) of a uniform `subset`-path draw from accepted paths (App. B.4).
+
+    counts: accepted paths per route (ROUTES,). Each route's count in the subset is hypergeometric, so both
+    expectations are sums over its pmf; no resampling.
+    """
+    from math import comb
+
+    total = int(counts.sum())
+    m = min(subset, total)
+    if m == 0:
+        return 0.0, float("nan")
+    denom = comb(total, m)
+    covered = sum(1 - comb(total - int(c), m) / denom for c in counts)
+    tv = 0.0
+    for c in map(int, counts):
+        for x in range(max(0, m - (total - c)), min(c, m) + 1):
+            tv += comb(c, x) * comb(total - c, m - x) / denom * abs(x / m - 1 / ROUTES)
+    return float(covered), 0.5 * tv

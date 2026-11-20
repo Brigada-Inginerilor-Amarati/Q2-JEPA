@@ -1,0 +1,41 @@
+# @package _global_
+# D3IL Avoiding preset (Q-JEPA App. B) on rendered segment clips. Same for every encoder:
+# python -m q2jepa.train +experiment=d3il encoder=<cnn|vit|hqvit> prior=<...> dataset.fold=<0..2> seed=<0..2>
+# D3IL has no dev split: evaluation rolls out from the common start (App. B.4); reuse MovingMNIST-tuned rates.
+defaults:
+  - override /dataset: d3il
+encoder:
+  res: 64
+  input_norm: l2
+  input_scale: 0.0344  # data/d3il.py: mean rendered-frame L2 norm 2.2009 / 64 at SIGMA = 0.85
+predictor:
+  kind: scaled
+  width: 128
+prior:
+  n_bits: 8
+  layers: 4
+  layout: brickwork
+  components: 4  # Mixture-4
+quantum:
+  shots: 512
+  shift_obs: 8
+  shift_coords: 12
+trainer:
+  iters: 12000
+  batch: 64
+  k_train: 32
+  finetune_iters: 1000
+  lr_finetune: 0.0001
+  finetune_windows: 16
+readout:
+  iters: 8000
+  iters_low: 2000
+  lr: 0.002
+  lr_low: 0.0002
+  batch: 64
+  weight_decay: 0.00001
+eval:
+  n_obs: 100000  # readout-only diagnostic: every train pair (capped at the fold's count)
+  rollouts: 384
+  max_calls: 16
+  subset: 60

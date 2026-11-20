@@ -38,8 +38,8 @@ The README describes the target. What actually exists today:
 | IBM inference (`scripts/eval_hardware.py`, `[ibm]` extra) | **not built** |
 | Dev-split evaluation (`eval.split=dev` → `metrics_dev.json`) | done |
 | Checkpoint `evaluate()`, Dice, readout-only diagnostic | **not built** |
-| HEP18 and D3IL data and renderers (`data/hep18.py`, `data/d3il.py`, `scripts/fetch_d3il.py`, `conf/dataset/`) | done; σ provisional until the render check (dataset spec §8). Not wired into `train.py`: `dataset=hep18` or `d3il` raises `NotImplementedError` |
-| HEP18 and D3IL readouts and metrics (`readout/`) | **not built** |
+| HEP18 and D3IL data and renderers (`data/hep18.py`, `data/d3il.py`, `scripts/fetch_d3il.py`, `conf/dataset/`) | done; σ provisional until the render check (dataset spec §8) |
+| HEP18 and D3IL training (`benchmarks/`, `readout/hep18.py`, `readout/d3il.py`, `metrics.py`, `+experiment=hep18`, `+experiment=d3il`) | built and CPU-tested ([plan](docs/superpowers/plans/2026-11-20-hep18-d3il-training.md)); not yet trained. D3IL needs `data/d3il/avoiding.npz` |
 
 Do not launch full `encoder=hqvit` training on CPU with the default `quantum.hqvit_train=cudaq` (minutes per step). Next build order is
 phase-2 spec §10: evaluation refactor → twin positional experiment → QCBM prior → T4 timing gate → HQViT →
@@ -68,8 +68,8 @@ From the spec; breaking any of these makes results invalid even if the code runs
   evaluated once per final checkpoint. ViT/HQViT rows always use `+experiment=phase2` (without it `res` is 16).
 - Every reported number must be regenerable from config overrides + seed + commit SHA. No manual
   notebook tweaks: change config or code, not the notebook.
-- A new benchmark = a `data/` module + a `readout/` module + `conf/dataset/*.yaml` + metrics. Never a
-  new training script.
+- A new benchmark = a `data/` module + a `benchmarks/` class + a `readout/` module + `conf/dataset/*.yaml` +
+  `conf/experiment/*.yaml` + metrics. Never a new training script.
 - No hardware training; IBM QPUs are inference-only on the trained Born prior.
 - The notebook stays thin: it installs the package and calls into it. No logic lives there.
 - Docs, specs, plans, results, comments and commit messages are in **English**. Keep them short and plain:
