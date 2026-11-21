@@ -9,11 +9,11 @@ and spec §4.
 |---|---|
 | GPU quantum tests on `nvidia`, including the HEP18 grid circuit | passed (T4, 51/51) |
 | HEP18 render check: readout-only validity ≥ 90% for CNN **and** twin at σ = 1.25 | CNN 97.9% passes; twin 31.8% fails (untuned) |
-| HEP18 world model: CNN on images 0.1–0.4% validity (7 runs), state encoder 44% (paper: 98%) | open: Daria's sweep, §1a |
+| HEP18 world model: CNN on images 0.1–0.4% validity (7 runs), state encoder 44% (paper: 98%) | §1a done (8f74d5f): no setting fixes it; `cnn-lre-lo` wins, no config change; C may start |
 | HEP18 wrapped ("snake") layout, `dataset.layout=snake` | rejected: CNN 0% validity, twin readout 0.5% |
 | D3IL data: `data/d3il/avoiding.npz` (`scripts/fetch_d3il.py`) | missing |
 | D3IL render check: same rule as HEP18, fold-0 train demos only | after the data |
-| Twin/HQViT pooling switched to soft-argmax (spec §5.6): move `mmnist/tune/{vit,hqvit}-s*` to `mmnist/tune-meanpool/` and `hep18/fix/vit-*` to `hep18/fix-meanpool/`, then rerun A and the twin part of §1a; `run_grid.py` refuses stale tune runs | open |
+| Twin/HQViT pooling switched to soft-argmax (spec §5.6): move `mmnist/tune/{vit,hqvit}-s*` to `mmnist/tune-meanpool/` and `hep18/fix/vit-*` to `hep18/fix-meanpool/`, then rerun A and the twin part of §1a; `run_grid.py` refuses stale tune runs | moved; twin part of §1a rerun; A running |
 
 If the D3IL render check fails on the twin, stop and take the numbers to the team (dataset spec §8). HEP18 never
 stops: §1a picks its best setting and the grid runs with it.
@@ -68,6 +68,28 @@ The `vit-*` runs must use this commit's pooling (`encoder.pool` in their `.hydra
   | no run beats the defaults | none |
 - HEP18 is never dropped. If nothing gets close to the paper's 98%, run C + D with the best setting and report
   what it reaches. The HEP18 results table states the gap to the paper and the sweep that picked the setting.
+
+**Result (2026-11-21, commit 8f74d5f, seed 0, dev split, one Colab T4; twin runs with soft-argmax pooling):**
+
+| Run | Validity | Coverage | Readout validity | TV |
+|---|---|---|---|---|
+| **cnn-lre-lo** | **0.0032** | **0.0104** | 0.990 | 0.997 |
+| cnn-lrp | 0.0032 | 0.0069 | 0.977 | 0.997 |
+| cnn-t3 | 0.0022 | 0.0052 | 0.997 | 0.998 |
+| cnn-t2 | 0.0015 | 0.0061 | 1.000 | 0.999 |
+| cnn-mix | 0.0015 | 0.0069 | 0.984 | 0.999 |
+| cnn-lre-hi | 0.0013 | 0.0026 | 0.880 | 0.999 |
+| cnn-long | 0.0011 | 0.0035 | 0.987 | 0.999 |
+| vit-lre-hi | 0.0001 | 0.0009 | 0.254 | 1.000 |
+| vit-t2 | 0.0000 | 0.0000 | 0.676 | 1.000 |
+| vit-t3 | 0.0000 | 0.0000 | 0.479 | 1.000 |
+
+- No setting passes the readout check: the twin reaches at most 0.676.
+- Highest validity: `cnn-lre-lo` and `cnn-lrp` tie at 0.0032. Coverage breaks the tie (as in F5), so `cnn-lre-lo` wins.
+  It is an encoder learning rate, so nothing changes: C tunes s1–s3 itself.
+- The sweep does not fix HEP18: every setting is within noise of the defaults, far from the paper's 98%. C + D run
+  with the defaults and the results table reports the gap.
+- The twin does not recover the state from HEP18 images even with soft-argmax (readout 0.25–0.68 vs CNN ~0.99).
 
 ## 2. Setup (one Colab T4 session)
 
