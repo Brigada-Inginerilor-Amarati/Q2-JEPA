@@ -3,7 +3,7 @@ import pytest
 import torch
 
 from q2jepa.encoder import build_encoder, prepare
-from q2jepa.encoder.vit import ViTEncoder, to_patches
+from q2jepa.encoder.vit import ViTEncoder, soft_argmax, to_patches
 from q2jepa.quantum.attention import image_to_patches
 
 
@@ -25,7 +25,7 @@ def test_to_patches_matches_quantum_layout():
 
 
 @pytest.mark.parametrize("res,patch", [(16, 4), (32, 4), (64, 8)])
-@pytest.mark.parametrize("pool", ["mean", "flatten"])
+@pytest.mark.parametrize("pool", ["mean", "flatten", "softargmax"])
 def test_vit_shapes(res, patch, pool):
     enc = ViTEncoder(res, patch=patch, pool=pool, pos_emb="sincos")
     assert enc(torch.rand(5, 3, res, res)).shape == (5, 64)
@@ -39,7 +39,9 @@ def test_mean_pool_without_positions_ignores_patch_layout():
     torch.testing.assert_close(enc(_permute_patches(x, perm)), enc(x))
 
 
-@pytest.mark.parametrize("kwargs", [{"pool": "flatten"}, {"pos_emb": "learned"}, {"pos_emb": "sincos"}])
+@pytest.mark.parametrize(
+    "kwargs", [{"pool": "flatten"}, {"pool": "softargmax"}, {"pos_emb": "learned"}, {"pos_emb": "sincos"}]
+)
 def test_positional_variants_see_patch_layout(kwargs):
     torch.manual_seed(0)
     x, perm = torch.rand(2, 3, 16, 16), torch.randperm(16)
@@ -100,3 +102,26 @@ def test_build_vit():
         name="vit", res=16, d=64, patch=4, depth=3, ffn_hidden=0, pool="mean", pos_emb="none", tokens="frame"
     )
     assert isinstance(build_encoder(cfg), ViTEncoder)
+
+
+def test_soft_argmax_returns_peak_coordinates():
+    # 4x4 token grid, coordinates in [-1, 1]; a sharp peak on token 6 (row 1, col 2) gives its (x, y).
+    t = torch.zeros(1, 16, 2)
+    t[0, 6, 0] = 50.0  # channel 0 peaks at token 6
+    t[0, 9, 1] = 50.0  # channel 1 peaks at token 9 (row 2, col 1)
+    xy = soft_argmax(t, 4)
+    assert xy.shape == (1, 4)  # (x, y) per channel
+    torch.testing.assert_close(xy[0, :2], torch.tensor([1 / 3, -1 / 3]), atol=1e-4, rtol=0)
+    torch.testing.assert_close(xy[0, 2:], torch.tensor([-1 / 3, 1 / 3]), atol=1e-4, rtol=0)
+    torch.testing.assert_close(soft_argmax(torch.zeros(1, 16, 1), 4), torch.zeros(1, 2))  # flat: grid centre
+
+
+@pytest.mark.parametrize("tokens", ["frame", "spacetime"])
+def test_softargmax_pool_tracks_a_moving_blob_without_pos_emb(tokens):
+    # Same content in a different patch must change the embedding even with no positional embedding.
+    torch.manual_seed(0)
+    enc = ViTEncoder(16, pool="softargmax", pos_emb="none", tokens=tokens).eval()
+    a, b = torch.zeros(1, 3, 16, 16), torch.zeros(1, 3, 16, 16)
+    a[..., 0:4, 0:4], b[..., 8:12, 12:16] = 1.0, 1.0
+    assert enc(a).shape == (1, 64)
+    assert not torch.allclose(enc(a), enc(b))

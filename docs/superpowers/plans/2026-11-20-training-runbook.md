@@ -13,6 +13,7 @@ and spec §4.
 | HEP18 wrapped ("snake") layout, `dataset.layout=snake` | rejected: CNN 0% validity, twin readout 0.5% |
 | D3IL data: `data/d3il/avoiding.npz` (`scripts/fetch_d3il.py`) | missing |
 | D3IL render check: same rule as HEP18, fold-0 train demos only | after the data |
+| Twin/HQViT pooling switched to soft-argmax (spec §5.6): move `mmnist/tune/{vit,hqvit}-s*` to `mmnist/tune-meanpool/` and `hep18/fix/vit-*` to `hep18/fix-meanpool/`, then rerun A and the twin part of §1a; `run_grid.py` refuses stale tune runs | open |
 
 If the D3IL render check fails on the twin, stop and take the numbers to the team (dataset spec §8). HEP18 never
 stops: §1a picks its best setting and the grid runs with it.
@@ -52,6 +53,7 @@ All runs are on rendered images.
 ```
 
 After a disconnect, rerun the same cell: finished runs are skipped. `--dry-run` prints the commands.
+The `vit-*` runs must use this commit's pooling (`encoder.pool` in their `.hydra/config.yaml`); the sweep script does not check it.
 
 **What to decide (Daria owns the HEP18 fix; no team sign-off needed):**
 - Pick the best setting: the highest dev validity among settings where the CNN and the twin both have

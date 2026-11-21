@@ -14,6 +14,7 @@ python scripts/run_grid.py --bench hep18 --stage grid --dry-run     # print the 
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -46,12 +47,39 @@ def encoder_overrides(encoder: str) -> list[str]:
     return [f"encoder={encoder}", *(["quantum.hqvit_train=torch"] if encoder == "hqvit" else [])]
 
 
-def best_schedule(root: Path, bench: str, encoder: str) -> str:
+def default_pool() -> str:
+    """encoder.pool of the twin (and HQViT, which inherits it) on this commit."""
+    m = re.search(r"^pool:\s*(\S+)", (REPO / "conf" / "encoder" / "vit.yaml").read_text(), re.MULTILINE)
+    return m.group(1) if m else "mean"
+
+
+def saved_pool(run_dir: Path) -> str | None:
+    """encoder.pool recorded in <run dir>/.hydra/config.yaml, or None if the run has no config yet."""
+    path = run_dir / ".hydra" / "config.yaml"
+    if not path.exists():
+        return None
+    m = re.search(r"^\s+pool:\s*(\S+)", path.read_text(), re.MULTILINE)
+    return m.group(1) if m else "mean"
+
+
+def check_pool(run_dir: Path, encoder: str, pool: str) -> None:
+    """Refuse a finished twin/HQViT run trained with another pooling (phase-2 spec §5.6)."""
+    have = saved_pool(run_dir) if encoder in ("vit", "hqvit") else None
+    if have is not None and have != pool:
+        raise SystemExit(
+            f"{run_dir} was trained with encoder.pool={have}, this commit uses {pool}: move it to "
+            f"{run_dir.parent.name}-{have}pool/ (kept as the ablation) and rerun"
+        )
+
+
+def best_schedule(root: Path, bench: str, encoder: str, pool: str | None = None) -> str:
     """The encoder's tune run with the best dev coverage (ties: lower TV)."""
     scores = {}
     for s in SCHEDULES:
-        path = root / TUNED_ON[bench] / "tune" / f"{encoder}-{s}" / "metrics_dev.json"
+        run_dir = root / TUNED_ON[bench] / "tune" / f"{encoder}-{s}"
+        path = run_dir / "metrics_dev.json"
         if path.exists():
+            check_pool(run_dir, encoder, pool or default_pool())
             m = json.loads(path.read_text())
             scores[s] = (m["coverage"], -m["tv"])
     if len(scores) < len(SCHEDULES):
@@ -61,7 +89,14 @@ def best_schedule(root: Path, bench: str, encoder: str) -> str:
 
 
 def plan(
-    bench: str, stage: str, root: Path, encoders=ENCODERS, priors=PRIORS, seeds=SEEDS, tune_root: Path | None = None
+    bench: str,
+    stage: str,
+    root: Path,
+    encoders=ENCODERS,
+    priors=PRIORS,
+    seeds=SEEDS,
+    tune_root: Path | None = None,
+    pool: str | None = None,
 ) -> list[Job]:
     """Runs of one stage. Grid schedules come from the tune runs under tune_root (default: root)."""
     if stage == "tune":
@@ -75,7 +110,7 @@ def plan(
     jobs = []
     folds = FOLDS if bench == "d3il" else (None,)
     for e in encoders:
-        sched = best_schedule(tune_root or root, bench, e)
+        sched = best_schedule(tune_root or root, bench, e, pool)
         rows = list(priors) + (["product_qcbm"] if bench == "hep18" and e == "hqvit" else [])
         for p in rows:
             for seed in seeds:
@@ -186,7 +221,11 @@ def main(argv=None) -> int:
         args.root = Path(DEFAULT_ROOT)
 
     base = args.root / args.bench / args.stage
-    jobs = plan(args.bench, args.stage, args.root, args.encoders, args.priors, args.seeds, args.tune_root)
+    pool = next((o.split("=", 1)[1] for o in args.set if o.startswith("encoder.pool=")), default_pool())
+    jobs = plan(args.bench, args.stage, args.root, args.encoders, args.priors, args.seeds, args.tune_root, pool)
+    for j in jobs:  # a finished run counts only if it used this commit's pooling
+        if (base / j.name / j.metrics).exists():
+            check_pool(base / j.name, j.name.split("-")[0], pool)
     todo = [j for j in jobs if not (base / j.name / j.metrics).exists()]
     print(f"{args.bench} {args.stage}: {len(jobs)} runs, {len(jobs) - len(todo)} finished, {len(todo)} to run")
     sha = git_sha()

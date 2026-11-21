@@ -104,3 +104,27 @@ def test_progress_survives_partial_files(tmp_path):
     run_grid.write_progress(base, jobs, {"cnn-s1", "cnn-s2"}, set())
     progress = (base / "progress.md").read_text()
     assert "| cnn-s1 | running | it 5, loss 0.5 |" in progress and "| cnn-s2 | running |" in progress
+
+
+def _hydra_pool(run_dir, pool):
+    (run_dir / ".hydra").mkdir(parents=True, exist_ok=True)
+    (run_dir / ".hydra" / "config.yaml").write_text(f"encoder:\n  name: vit\n  pool: {pool}\n")
+
+
+def test_stale_pooling_is_refused(tmp_path, monkeypatch):
+    # phase-2 spec §5.6: twin/HQViT tune runs trained with mean pooling must not pick the grid's schedule.
+    assert run_grid.default_pool() == "softargmax"
+    _tuned(tmp_path, "mmnist", ALL_EQUAL)
+    for s in run_grid.SCHEDULES:
+        _hydra_pool(tmp_path / "mmnist" / "tune" / f"vit-{s}", "mean")
+        _hydra_pool(tmp_path / "mmnist" / "tune" / f"cnn-{s}", "mean")  # CNN ignores pooling
+    with pytest.raises(SystemExit, match="encoder.pool=mean"):
+        run_grid.plan("mmnist", "grid", tmp_path)
+    assert run_grid.best_schedule(tmp_path, "mmnist", "cnn") == "s1"
+    assert len(run_grid.plan("mmnist", "grid", tmp_path, pool="mean")) == 18  # the ablation root
+    monkeypatch.setattr(run_grid, "git_sha", lambda: "abc")
+    with pytest.raises(SystemExit, match="tune-meanpool"):
+        run_grid.main(["--bench", "mmnist", "--stage", "tune", "--root", str(tmp_path), "--dry-run"])
+    for s in run_grid.SCHEDULES:
+        _hydra_pool(tmp_path / "mmnist" / "tune" / f"vit-{s}", "softargmax")
+    assert len(run_grid.plan("mmnist", "grid", tmp_path)) == 18

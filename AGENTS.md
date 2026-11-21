@@ -29,7 +29,7 @@ The README describes the target. What actually exists today:
 |---|---|
 | Stochastic MovingMNIST (`data/mmnist.py`) | done |
 | CNN encoder (`encoder/cnn.py`, `encoder=cnn`) | done |
-| Classical ViT twin of HQViT (`encoder/vit.py`, `encoder=vit`) | done; defaults 8×8 patches + sinusoidal positions; learning rate under test (phase-2 spec §5.3) |
+| Classical ViT twin of HQViT (`encoder/vit.py`, `encoder=vit`) | done; defaults 8×8 patches + sinusoidal positions + soft-argmax pooling (phase-2 spec §5.3, §5.6) |
 | Classical priors: Softmax-Categorical, Mixture (`prior/classical.py`) | done |
 | Predictor, losses, readout, metrics, 3-stage `train.py` with resume | done |
 | Swap-test attention kernels, factored 4q + full 2n+1 q (`quantum/attention.py`) | done; used for equivalence tests and the benchmark |
