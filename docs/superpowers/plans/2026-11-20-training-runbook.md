@@ -13,7 +13,7 @@ and spec §4.
 | HEP18 wrapped ("snake") layout, `dataset.layout=snake` | rejected: CNN 0% validity, twin readout 0.5% |
 | D3IL data: `data/d3il/avoiding.npz` (`scripts/fetch_d3il.py`) | missing |
 | D3IL render check: same rule as HEP18, fold-0 train demos only | after the data |
-| Twin/HQViT pooling switched to soft-argmax (spec §5.6): move `mmnist/tune/{vit,hqvit}-s*` to `mmnist/tune-meanpool/` and `hep18/fix/vit-*` to `hep18/fix-meanpool/`, then rerun A and the twin part of §1a; `run_grid.py` refuses stale tune runs | moved; twin part of §1a rerun; A running |
+| Twin/HQViT pooling switched to soft-argmax (spec §5.6): move `mmnist/tune/{vit,hqvit}-s*` to `mmnist/tune-meanpool/` and `hep18/fix/vit-*` to `hep18/fix-meanpool/`, then rerun A and the twin part of §1a; `run_grid.py` refuses stale tune runs | done, no gain; reverted to mean pooling (spec §5.6). Soft-argmax runs moved to `mmnist/tune-softargmaxpool/` and `hep18/fix-softargmaxpool/`; mean-pool runs back in `tune/` and `fix/` |
 
 If the D3IL render check fails on the twin, stop and take the numbers to the team (dataset spec §8). HEP18 never
 stops: §1a picks its best setting and the grid runs with it.

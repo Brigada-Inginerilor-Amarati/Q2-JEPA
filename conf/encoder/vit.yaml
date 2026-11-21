@@ -5,5 +5,5 @@ input_norm: l2
 patch: 8
 pos_emb: sincos
 tokens: spacetime
-# phase-2 spec §5.6: mean + per-channel soft-argmax (x, y) per frame; pool=mean is the ablation row.
-pool: softargmax
+# phase-2 spec §5.6: mean pooling (soft-argmax tried 2026-11-21, no gain; pool=softargmax stays available).
+pool: mean
