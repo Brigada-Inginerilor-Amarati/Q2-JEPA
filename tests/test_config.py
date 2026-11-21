@@ -43,11 +43,11 @@ def test_group_switches():
         "l2",
         8,
         3,
-        "softargmax",
+        "mean",
         "sincos",
     )
     assert vit.tokens == "spacetime"
-    assert _cfg(["encoder=hqvit"]).encoder.pool == "softargmax"  # inherited from vit.yaml (F4)
+    assert _cfg(["encoder=hqvit"]).encoder.pool == "mean"  # inherited from vit.yaml (F4)
     assert _cfg().encoder.input_norm == "none"
     assert _cfg(["+experiment=phase2"]).encoder.input_norm == "l2"
     assert _cfg(["+experiment=phase2"]).encoder.input_scale == 0.144
