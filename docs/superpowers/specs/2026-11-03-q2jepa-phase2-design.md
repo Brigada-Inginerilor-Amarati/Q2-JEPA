@@ -30,6 +30,7 @@ quantum component is not a result.
 | **Equal small tuning budget**: 3 encoder learning-rate schedules per encoder, dev split (F5) | team | — |
 | Architecture-matched twin; parameter counts reported, not matched (F8) | me, team to confirm | — |
 | **Space-time tokens** (attention across frames) for HQViT and twin | team | spec §9 open question (frame fusion) |
+| **Soft-argmax pooling** (mean + per-channel x, y) for HQViT and twin on all benchmarks; mean pooling kept as an ablation row (§5.6) | team, 2026-11-21 | §5.2 mean pooling |
 
 ## 3. What adapting HEP18 and D3IL to images means
 
@@ -56,7 +57,7 @@ These rules apply to every comparison we report. Rules marked **(hard)** are add
   `encoder.res`, with the same `encoder.input_norm`. For any comparison involving HQViT this is `l2`
   (unit-RMS frames): amplitude encoding discards overall brightness, so no classical encoder may see it.
 - **F3 — Same frame fusion.** HQViT and the twin use space-time tokens (attention across frames, per-frame
-  mean pooling, shared fusion head; §5.3). The CNN stacks frames as channels (early fusion); this difference is stated next to every CNN row.
+  soft-argmax pooling, shared fusion head; §5.3, §5.6). The CNN stacks frames as channels (early fusion); this difference is stated next to every CNN row.
 - **F4 (hard) — HQViT claims are made against the twin.** The twin (`encoder=vit`) shares HQViT's patching,
   block count, FFN, positional handling, pooling and fusion head; only `Block.attend` differs.
 - **F5 — Equal tuning budget, dev split only.** Every encoder gets the same 3 encoder learning-rate
@@ -90,7 +91,7 @@ Q-JEPA App. A.2. Frames stacked as channels. Used with `input_norm=l2` in all ph
 
 ### 5.2 Classical ViT twin (`encoder=vit`, built 2026-11-03)
 `src/q2jepa/encoder/vit.py`. 8×8 patches at 64×64 (64 tokens of dimension 64; §5.5), `depth=3` single-head
-post-norm blocks, FFN hidden = patch dim (HQViT §5), fixed sinusoidal positions (§5.3), space-time tokens (`tokens=spacetime`: one token set over all frames with a sinusoidal frame embedding; `tokens=frame` encodes frames separately), mean-pooled per frame and fused by the CNN's head widths
+post-norm blocks, FFN hidden = patch dim (HQViT §5), fixed sinusoidal positions (§5.3), soft-argmax pooling (§5.6), space-time tokens (`tokens=spacetime`: one token set over all frames with a sinusoidal frame embedding; `tokens=frame` encodes frames separately), pooled per frame (soft-argmax, §5.6) and fused by the CNN's head widths
 (·→96→64, LayerNorm). Patch layout matches `quantum/attention.py` exactly, so HQViT can reuse `to_patches`.
 
 ### 5.3 Positional information (deviation from HQViT)
@@ -167,6 +168,32 @@ All encoders see 64×64 input (`+experiment=phase2` sets `encoder.res=64`); noth
 the image side), but keeps every native pixel and makes the 64×64 CNN — the Q-JEPA paper's own setting — the
 anchor. Deviation from HQViT, which stops at 32×32; documented here and applied to the twin. Exploratory
 seed-0 CPU runs at 3a46ffb: CNN coverage 86.4 (16×16) → 90.3 (32×32).
+
+### 5.6 Pooling: soft-argmax (`encoder.pool=softargmax`, decided 2026-11-21)
+
+MovingMNIST tuning at 63178d7 (T4, dev, seed 0, Softmax-Categorical, `quantum.hqvit_train=torch` for HQViT),
+mean pooling:
+
+| Schedule | CNN cov / val / TV | twin | HQViT |
+|---|---|---|---|
+| s1 | 97.8 / 99.3 / 0.111 | 48.7 / 54.5 / 0.545 | 48.7 / 56.2 / 0.567 |
+| s2 | 73.1 / 84.1 / 0.288 | 38.4 / 42.1 / 0.668 | 42.8 / 54.6 / 0.594 |
+| s3 | 67.5 / 78.2 / 0.352 | 44.7 / 48.2 / 0.615 | 33.6 / 39.0 / 0.702 |
+
+Higher or constant encoder rates (s2, s3) do not help the twin, so the gap is not under-training. A digit covers
+3–5 of 64 patches; the per-frame mean dilutes its position among empty patches, while motion is what the
+targets need. Max pooling has the same problem (permutation-invariant).
+
+**Decision (team, 2026-11-21):** `pool=softargmax` for HQViT and twin on MovingMNIST, HEP18 and D3IL. Per frame
+the head receives the token mean (content) plus, per channel, the soft-argmax (x, y) over the 8×8 patch grid
+(softmax over patches, expected coordinate in [-1, 1]): 3 × 64 features instead of 64. No new parameters
+besides the wider first head layer. It runs after the attention blocks, so HQViT's circuits, the factored
+path and F4 are unchanged; the CNN is untouched. `pool=mean` is reported as an ablation row. The twin and
+HQViT tune stage reruns on the new commit; mean-pool runs move to `<bench>/tune-meanpool/`
+(`scripts/run_grid.py` refuses finished twin/HQViT runs whose saved `encoder.pool` differs). The ablation rows run
+with `--set encoder.pool=mean --root <separate root>`. F5 note: the pooling was chosen after seeing twin/HQViT dev
+tuning, so those encoders saw 2 poolings × 3 schedules and the CNN 3 schedules; this is stated next to any
+CNN-vs-ViT row. HQViT vs twin (F4) is unaffected.
 
 ## 6. HQViT gradients through CUDA-Q
 

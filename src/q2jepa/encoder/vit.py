@@ -3,11 +3,14 @@
 tokens="frame": each frame is encoded separately and fused after pooling (HQViT paper: one image per circuit).
 tokens="spacetime": the patches of all frames form one token set, so attention compares patches across frames
 (HQViT: the index register runs over (frame, patch)); a sinusoidal frame embedding marks time, and tokens are
-still mean-pooled per frame before the shared fusion head.
+still pooled per frame (mean, or mean + soft-argmax) before the shared fusion head.
 Patch layout matches quantum/attention.py: patch i row-major over the grid, pixel l row-major in the patch.
 
 With pool="mean" and pos_emb="none" the encoder is invariant to permuting patches, exactly like HQViT's
 I_idx ⊗ W ansatz followed by mean pooling; pool="flatten" or a positional embedding restore patch positions.
+pool="softargmax" (phase-2 spec §5.6) appends, per channel, the soft-argmax (x, y) over the patch grid to the mean:
+mean pooling alone dilutes a small object's position among empty patches. It acts after the attention blocks,
+so HQViT's circuits are unchanged.
 The embedding is added to the pixel tokens before block 1, so HQViT amplitude-encodes the same tokens.
 """
 
@@ -38,6 +41,16 @@ def sincos_1d(n: int, dim: int) -> torch.Tensor:
     omega = 1.0 / 10000 ** (torch.arange(dim // 2) / (dim // 2))
     a = torch.arange(n).reshape(-1, 1).float() * omega
     return torch.cat([a.sin(), a.cos()], 1)
+
+
+def soft_argmax(t: torch.Tensor, grid: int) -> torch.Tensor:
+    """(N, grid*grid, C) row-major tokens -> (N, 2C): per channel, softmax over tokens, then expected (x, y) in [-1, 1]."""
+    lin = torch.linspace(-1.0, 1.0, grid, device=t.device, dtype=t.dtype)
+    ys, xs = torch.meshgrid(lin, lin, indexing="ij")
+    w = t.softmax(1)  # (N, T, C)
+    x = (w * xs.reshape(1, -1, 1)).sum(1)
+    y = (w * ys.reshape(1, -1, 1)).sum(1)
+    return torch.cat([x, y], 1)
 
 
 def to_patches(x: torch.Tensor, p: int) -> torch.Tensor:
@@ -80,15 +93,16 @@ class ViTEncoder(nn.Module):
         block: Callable[[int, int], nn.Module] | None = None,
     ):
         super().__init__()
-        if pool not in ("mean", "flatten"):
+        if pool not in ("mean", "flatten", "softargmax"):
             raise ValueError(f"unknown pool {pool!r}")
         if res % patch:
             raise ValueError(f"res {res} is not a multiple of patch {patch}")
         if tokens not in ("frame", "spacetime"):
             raise ValueError(f"unknown tokens {tokens!r}")
-        if tokens == "spacetime" and pool != "mean":
-            raise ValueError("tokens=spacetime supports pool=mean only")
+        if tokens == "spacetime" and pool == "flatten":
+            raise ValueError("tokens=spacetime does not support pool=flatten")
         self.patch, self.pool, self.spacetime, self.frames = patch, pool, tokens == "spacetime", frames
+        self.grid = res // patch
         tokens, dim = (res // patch) ** 2, patch * patch
         self.register_buffer("time", sincos_1d(frames, dim)[:, None] if self.spacetime else None)
         if pos_emb == "sincos":
@@ -100,7 +114,7 @@ class ViTEncoder(nn.Module):
         else:
             raise ValueError(f"unknown pos_emb {pos_emb!r}")
         self.blocks = nn.ModuleList((block or Block)(dim, ffn_hidden or dim) for _ in range(depth))
-        per_frame = dim if pool == "mean" else tokens * dim
+        per_frame = {"mean": dim, "softargmax": 3 * dim, "flatten": tokens * dim}[pool]
         # Temporal fusion: same head widths as the CNN encoder (Q-JEPA App. A.2).
         self.head = nn.Sequential(
             nn.Linear(frames * per_frame, 96), nn.SiLU(), nn.Linear(96, d), nn.LayerNorm(d)
@@ -118,7 +132,11 @@ class ViTEncoder(nn.Module):
         for block in self.blocks:
             t = block(t)
         if self.spacetime:
-            t = t.reshape(b, self.frames, -1, t.shape[-1]).mean(2)  # per-frame mean keeps frame order
+            t = t.reshape(b * self.frames, -1, t.shape[-1])  # per-frame pooling keeps frame order
+        if self.pool == "mean":
+            t = t.mean(1)
+        elif self.pool == "softargmax":
+            t = torch.cat([t.mean(1), soft_argmax(t, self.grid)], 1)
         else:
-            t = t.mean(1) if self.pool == "mean" else t.flatten(1)
+            t = t.flatten(1)
         return self.head(t.reshape(b, -1))

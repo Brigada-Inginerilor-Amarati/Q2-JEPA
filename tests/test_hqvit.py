@@ -18,6 +18,17 @@ def test_shapes_and_gradients_reach_every_parameter():
     assert all(p.grad is not None and p.grad.abs().sum() > 0 for p in enc.parameters())
 
 
+def test_softargmax_pool_is_inherited_from_the_twin():
+    enc = _small(pos_emb="sincos", tokens="spacetime", pool="softargmax")
+    twin = ViTEncoder(16, patch=4, depth=2, pos_emb="sincos", tokens="spacetime", pool="softargmax")
+    assert enc.head[0].in_features == twin.head[0].in_features
+    enc.set_backend("torch")
+    out = enc(torch.rand(2, 3, 16, 16))
+    assert out.shape == (2, 64)
+    out.pow(2).sum().backward()
+    assert all(p.grad is not None and p.grad.abs().sum() > 0 for p in enc.parameters())
+
+
 def test_shared_parameters_initialize_like_the_twin():
     torch.manual_seed(3)
     q = HQViTEncoder(16, patch=4, depth=2)
