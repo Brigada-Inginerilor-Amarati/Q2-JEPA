@@ -28,8 +28,13 @@ def test_run_counts(tmp_path):
     assert len(run_grid.plan("hep18", "grid", tmp_path)) == 21  # + Product-QCBM for HQViT
     d3il = run_grid.plan("d3il", "grid", tmp_path)  # tuned on MovingMNIST
     assert len(d3il) == 54 and len({j.name for j in d3il}) == 54
-    with pytest.raises(SystemExit, match="no dev split"):
+    with pytest.raises(SystemExit, match="reuses MovingMNIST"):
         run_grid.plan("d3il", "tune", tmp_path)
+    for bench in ("nri", "chess"):  # fast iteration: MovingMNIST's schedules, no own tuning
+        assert len(run_grid.plan(bench, "grid", tmp_path)) == 18
+        assert len(run_grid.plan(bench, "grid", tmp_path, seeds=(0,))) == 6
+        with pytest.raises(SystemExit, match="reuses MovingMNIST"):
+            run_grid.plan(bench, "tune", tmp_path)
 
 
 def test_best_schedule_and_priority(tmp_path):

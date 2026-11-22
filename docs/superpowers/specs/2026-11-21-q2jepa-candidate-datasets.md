@@ -29,3 +29,25 @@ Per AGENTS.md §3, a new benchmark is a `data/` module + `benchmarks/` class + `
 and reported on images (or the board tensor as an image), every encoder at the same `encoder.res`,
 tuning on `eval.split=dev`, with a classical baseline row next to each quantum row. Write a dataset spec
 (acquisition, rendering, acceptance tests) like the HEP18/D3IL one before any code.
+
+## 4. Built for fast iteration (2026-11-22)
+
+Team decision (2026-11-22): try charged particles and chess quickly instead of the full HEP18 grid (stage D,
+~42 GPU-hours on a table at the floor: CNN 0.3% validity). No per-benchmark tuning sweep: both reuse MovingMNIST's
+model sizes and tuned schedules (`TUNED_ON` in `scripts/run_grid.py`). First pass: one seed, then more seeds only
+where the result is informative.
+
+| | Charged particles (`nri`) | Chess (`chess`) |
+|---|---|---|
+| Data | `data/nri.py`: own NRI-style simulator, generated on the fly | `scripts/fetch_chess.py`: first 1008 qualifying positions of the Lichess eval stream → `data/chess/positions.npz` |
+| Futures | 4: hidden charges (+1, ±1, ±1) switch on at t = 0; balls fly freely while observed. Futures ≥ 5 px apart at t = 6 | 3: the top 3 engine moves, white to move, all within 30 cp of the best |
+| Clip | 3 balls as Gaussian blobs of different widths, frames t = −2, −1, 0 / t = 2, 4, 6 | board: white pieces, black pieces, all pieces (8 px squares, intensity = piece type) |
+| State, match | ball positions in the 3 future frames (18 numbers); all within 2 px | the move's squares (4 numbers); exact squares |
+| Splits | 800 / 80 / 128 | 800 / 80 / 128 |
+
+Shared code: `benchmarks/futures.py` (whole-scene clips, J futures as targets), `readout/futures.py` (MLP [h; t] →
+state), `metrics.futures_metrics` (coverage, validity, TV vs uniform, minADE and ES in tolerance units) and a
+readout-only validity diagnostic. Runs: `python scripts/run_grid.py --bench <nri|chess> --stage grid --seeds 0`.
+
+Chess is not a video world model: the "clip" is three views of one board and the futures are positions one move
+later. It tests whether the latent prior can cover several equally good discrete outcomes; results tables say so.
