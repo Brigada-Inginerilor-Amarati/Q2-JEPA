@@ -92,31 +92,34 @@ def state_distance(a: np.ndarray, b: np.ndarray, perms: np.ndarray | None = None
 
 
 def match_futures(
-    pred: np.ndarray, truth: np.ndarray, scale: float, perms: np.ndarray | None = None
+    pred: np.ndarray, truth: np.ndarray, scale: float, perms: np.ndarray | None = None, max_radius: float = np.inf
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """(valid (S,), nearest future (S,), distances (S, J) in units of scale) of samples pred (S, m) to futures (J, m).
 
     A sample is valid if it lies within half the gap from its nearest future to that future's nearest other
-    future, so it matches exactly one future. perms: optional (P, m) state permutations describing the same scene.
+    future, so it matches exactly one future, and within max_radius of it, so widely spaced futures do not accept
+    large errors. perms: optional (P, m) state permutations describing the same scene.
     """
     n_s, n_fut = len(pred), len(truth)
     to_fut = state_distance(pred / scale, truth / scale, perms)
     gap = state_distance(truth / scale, truth / scale, perms) + np.diag(np.full(n_fut, np.inf))
     nearest = to_fut.argmin(1)
-    return to_fut[np.arange(n_s), nearest] <= gap.min(1)[nearest] / 2, nearest, to_fut
+    radius = np.minimum(gap.min(1) / 2, max_radius)
+    return to_fut[np.arange(n_s), nearest] <= radius[nearest], nearest, to_fut
 
 
 def futures_metrics(
-    pred: np.ndarray, truth: np.ndarray, scale: float, perms: np.ndarray | None = None
+    pred: np.ndarray, truth: np.ndarray, scale: float, perms: np.ndarray | None = None, max_radius: float = np.inf
 ) -> dict[str, float]:
     """Multi-future metrics for one observation (charged particles, chess), J equally likely futures.
 
     pred: decoded samples (S, m); truth: the J futures (J, m); scale: the state unit (px, squares); perms: optional
     (P, m) index permutations of the state that describe the same scene (charged particles: balls as a set).
-    A valid sample (match_futures) counts for the one future it matches. min_ade and es use the same distance.
+    A valid sample (match_futures) counts for the one future it matches. min_ade and es use the same distance; with
+    perms that distance is a minimum over orders, so es is descriptive (not a proper score).
     """
     n_s, n_fut = len(pred), len(truth)
-    valid, nearest, to_fut = match_futures(pred, truth, scale, perms)
+    valid, nearest, to_fut = match_futures(pred, truth, scale, perms, max_radius)
     p = pred / scale
     cats = np.where(valid, nearest, n_fut)
     freq = np.bincount(cats, minlength=n_fut + 1) / n_s

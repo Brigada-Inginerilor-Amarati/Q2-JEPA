@@ -35,7 +35,8 @@ def test_futures_metrics():
     assert one["validity"] == 1.0 and one["coverage"] == pytest.approx(1 / 3) and one["tv"] == pytest.approx(2 / 3)
     off = futures_metrics(np.repeat(truth[:1] + 4.0, 6, 0), truth, 1.0)  # nearest is still 0, but beyond the radius
     assert (off["validity"], off["coverage"], off["tv"]) == (0.0, 0.0, 1.0)
-    assert futures_metrics(np.repeat(truth[:1] + 4.0, 6, 0), truth, 2.0)["validity"] == 0.0  # scale-free rule
+    assert futures_metrics(np.repeat(truth[:1] + 4.0, 6, 0), truth, 2.0)["validity"] == 0.0  # uncapped: scale-free
+    assert futures_metrics(np.repeat(truth[:1] + 3.0, 6, 0), truth, 1.0, max_radius=2.0)["validity"] == 0.0  # capped
 
 
 def test_particle_balls_match_as_a_set():

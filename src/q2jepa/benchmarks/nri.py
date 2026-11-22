@@ -17,6 +17,7 @@ BALL_PERMS = [
 
 class ChargedParticlesBenchmark(FuturesBenchmark):
     src_dims, scale, perms = 3, 1.0, BALL_PERMS  # source: positions (3 frames, 3 balls, 2), px
+    max_radius = 4.0  # px RMS, about the widest blob (2 x 2.4 px); binds only when futures are far apart
 
     def load(self, split: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         ds = ChargedParticles(split)

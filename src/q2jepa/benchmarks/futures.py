@@ -24,6 +24,7 @@ class FuturesBenchmark:
     src_dims: int = 0
     scale: float = 1.0
     perms: list[list[int]] | None = None
+    max_radius: float = float("inf")  # cap on the match radius, in units of scale (metrics.match_futures)
 
     def load(self, split: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         raise NotImplementedError
@@ -89,7 +90,7 @@ class FuturesBenchmark:
         pred = predictor(h, prior.sample(h, k))  # (n, K, d)
         dec = readout(h[:, None].expand(-1, k, -1), pred).cpu().double().numpy()
         truth, perms = state.cpu().double().numpy(), self.perms_t.cpu().numpy()
-        per_obs = [futures_metrics(dec[i], truth[i], self.scale, perms) for i in range(n)]
+        per_obs = [futures_metrics(dec[i], truth[i], self.scale, perms, self.max_radius) for i in range(n)]
         metrics = {key: float(np.mean([m[key] for m in per_obs])) for key in per_obs[0]}
 
         # Readout-only diagnostic: decode each encoded true future with the same validity rule. Its rate is the
@@ -98,7 +99,7 @@ class FuturesBenchmark:
         rd = readout(h[:, None].expand(-1, n_fut, -1), self.encode_src(encoder, fut)).cpu().double().numpy()
         own = []
         for i in range(n):
-            valid, nearest, _ = match_futures(rd[i], truth[i], self.scale, perms)
+            valid, nearest, _ = match_futures(rd[i], truth[i], self.scale, perms, self.max_radius)
             own.append(valid & (nearest == np.arange(n_fut)))
         metrics["readout_validity"] = float(np.mean(own))
         return metrics

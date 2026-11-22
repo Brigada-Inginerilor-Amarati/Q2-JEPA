@@ -46,7 +46,7 @@ where the result is informative.
 | Splits | 20000 / 80 / 128 (one stream per split) | 10000 / 80 / 128 |
 
 Shared code: `benchmarks/futures.py` (whole-scene clips, J futures as targets), `readout/futures.py` (MLP [h; t] →
-state), `metrics.futures_metrics` (coverage, validity, TV vs uniform, minADE and ES in tolerance units) and a
+state), `metrics.futures_metrics` (coverage, validity, TV vs uniform, minADE and ES as RMS distance in state units: px, squares) and a
 readout-only validity diagnostic (§4.1). Runs: `python scripts/run_grid.py --bench <nri|chess> --stage grid --seeds 0`.
 
 Chess is not a video world model: the "clip" is three views of one board and the futures are positions one move
@@ -68,5 +68,7 @@ The readout memorised 800 scenes. Changes: particles train on 20000 generated sc
 (sources kept compact on the device and rendered per batch); readout MLP 512 wide, 10000 steps of 256
 (`conf/experiment/nri.yaml`, `chess.yaml`); balls matched as a set (the readout confuses them, they differ only in
 width). Validity (`metrics.match_futures`): a sample is valid if it lies within half the gap from its nearest future
-to that future's nearest other future, so it matches exactly one future. This needs no tuned tolerance. The
-first-pass runs (800 scenes, old metric) are not reported.
+to that future's nearest other future, so it matches exactly one future, capped at 4 px (particles; about the widest
+blob) and at the exact squares (chess: RMS 0.25). With balls matched as a set, particle ES is descriptive only. The
+first-pass runs (800 scenes, old metric) are void: they were moved out of `runs/nri/grid` on the VM, so the grid
+launcher cannot skip or resume them.
