@@ -9,8 +9,9 @@ import torch
 from hydra import compose, initialize_config_dir
 
 import q2jepa.config  # noqa: F401
+from q2jepa.benchmarks.nri import BALL_PERMS
 from q2jepa.data import chess, nri
-from q2jepa.metrics import futures_metrics
+from q2jepa.metrics import futures_metrics, match_futures
 from q2jepa.train import run
 
 CONF = str(Path(__file__).resolve().parents[1] / "conf")
@@ -27,14 +28,26 @@ def _cfg(extra):
 
 
 def test_futures_metrics():
-    truth = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]])
-    tol = np.array([2.0, 2.0])
-    m = futures_metrics(np.repeat(truth, 4, 0), truth, tol)
+    truth = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]])  # nearest-other gap 10 (RMS 7.07): radius 3.54
+    m = futures_metrics(np.repeat(truth, 4, 0), truth, 1.0)
     assert (m["coverage"], m["validity"], m["min_ade"]) == (1.0, 1.0, 0.0) and m["tv"] == pytest.approx(0.0)
-    one = futures_metrics(np.repeat(truth[:1] + 1.5, 6, 0), truth, tol)  # within tolerance of future 0 only
+    one = futures_metrics(np.repeat(truth[:1] + 3.0, 6, 0), truth, 1.0)  # RMS 3.0 from future 0 only
     assert one["validity"] == 1.0 and one["coverage"] == pytest.approx(1 / 3) and one["tv"] == pytest.approx(2 / 3)
-    off = futures_metrics(np.repeat(truth[:1] + 2.5, 6, 0), truth, tol)
+    off = futures_metrics(np.repeat(truth[:1] + 4.0, 6, 0), truth, 1.0)  # nearest is still 0, but beyond the radius
     assert (off["validity"], off["coverage"], off["tv"]) == (0.0, 0.0, 1.0)
+    assert futures_metrics(np.repeat(truth[:1] + 4.0, 6, 0), truth, 2.0)["validity"] == 0.0  # scale-free rule
+
+
+def test_particle_balls_match_as_a_set():
+    _, fut, _ = nri.generate(4, seed=3)
+    truth = fut[0].reshape(4, 18)
+    swapped = fut[0][:, :, [1, 0, 2]].reshape(4, 18)  # balls 0 and 1 relabelled
+    perms = np.array(BALL_PERMS)
+    assert futures_metrics(swapped, truth, 1.0, perms)["validity"] == 1.0
+    assert futures_metrics(swapped, truth, 1.0, perms)["min_ade"] == pytest.approx(0.0)
+    assert futures_metrics(swapped, truth, 1.0)["min_ade"] > 1.0  # without perms the order matters
+    valid, nearest, _ = match_futures(swapped, truth, 1.0, perms)
+    assert valid.all() and (nearest == np.arange(4)).all()
 
 
 def test_particles_have_four_separated_futures():
@@ -86,18 +99,22 @@ def test_chess_moves_and_render():
         clip[0, 7 * 8 + 3, 4 * 8 + 3] == chess.INTENSITY["k"] and clip[1, 0 * 8 + 3, 0 * 8 + 3] == chess.INTENSITY["r"]
     )
     assert clip[0].sum() > 0 and clip[1].sum() > 0 and np.allclose(clip[2], np.maximum(clip[0], clip[1]))
+    start = chess.parse_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    for b in (board, castled, promo, start):  # the GPU renderer equals the reference one
+        assert torch.equal(chess.render_codes(torch.tensor(chess.codes(b))), torch.tensor(chess.render(b)))
 
 
 def _fake_chess_root(tmp_path):
-    fens = ["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"] * 1008
-    moves = [["e2e4", "d2d4", "g1f3"]] * 1008
+    fens = ["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"] * chess.N
+    moves = [["e2e4", "d2d4", "g1f3"]] * chess.N
     (tmp_path / "chess").mkdir(parents=True)
     np.savez(tmp_path / "chess" / "positions.npz", fen=np.array(fens), moves=np.array(moves))
     return tmp_path
 
 
 @pytest.mark.parametrize("extra", [[], QCBM])
-def test_particles_smoke(tmp_path, extra):
+def test_particles_smoke(tmp_path, monkeypatch, extra):
+    monkeypatch.setattr(nri.ChargedParticles, "_SPLITS", {"train": (16, 0), "dev": (4, 1), "test": (4, 2)})
     m = run(_cfg(["+experiment=nri", *extra]), tmp_path)
     assert {"coverage", "validity", "tv", "min_ade", "es", "readout_validity"} <= set(m)
     assert all(np.isfinite(list(m.values())))

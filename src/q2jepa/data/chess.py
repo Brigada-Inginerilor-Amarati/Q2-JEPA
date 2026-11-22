@@ -19,6 +19,7 @@ MOVES = 3
 CP_SPREAD = 30
 INTENSITY = {"p": 0.3, "n": 0.45, "b": 0.55, "r": 0.7, "q": 0.85, "k": 1.0}
 PATH = Path("chess/positions.npz")  # under dataset.root
+N = 10208  # positions: train 10000, dev 80, test 128
 # sha256 of the fetched positions (2026-11-22): the Lichess stream is not versioned, so a re-fetch must reproduce it
 SHA256 = "23d6cd29f0cb4a22e3ce5b1da26990a39966036c06ab6a105ee5447dc4efdbe7"
 
@@ -84,10 +85,40 @@ def render(board: list[list[str]]) -> np.ndarray:
     return clip
 
 
-class ChessPositions:
-    """Rendered clips: obs (n, 3, 64, 64), fut (n, 3 moves, 3, 64, 64); state (n, 3, 4). Needs fetch_chess.py."""
+PIECES = "PNBRQKpnbrqk"  # board code = 1 + index; 0 = empty
 
-    _SLICES: ClassVar[dict[str, slice]] = {"train": slice(0, 800), "dev": slice(800, 880), "test": slice(880, 1008)}
+
+def codes(board: list[list[str]]) -> np.ndarray:
+    """(8, 8) int64 piece codes of a parsed board."""
+    return np.array([[PIECES.index(p) + 1 if p else 0 for p in row] for row in board], np.int64)
+
+
+_LEVELS = torch.tensor([0.0] + [INTENSITY[p.lower()] for p in PIECES])
+_MASK = torch.zeros(8, 8)
+_MASK[1:7, 1:7] = 1.0  # centred 6x6 patch per square
+
+
+def render_codes(c: torch.Tensor) -> torch.Tensor:
+    """Clips (..., 3, 64, 64) from piece codes (..., 8, 8), on c's device; equals render() of the same board."""
+    v = _LEVELS.to(c.device)[c]
+    white, black = torch.where(c <= 6, v, 0.0), torch.where(c > 6, v, 0.0)
+    x = torch.stack([white, black, white + black], -3)  # (..., 3, 8, 8); a square holds one piece
+    up = x[..., :, None, :, None] * _MASK.to(c.device)[:, None, :]  # (..., 3, 8 rows, 8 py, 8 cols, 8 px)
+    return up.reshape(*x.shape[:-2], 64, 64)
+
+
+class ChessPositions:
+    """Piece codes: obs (n, 8, 8), fut (n, 3 moves, 8, 8); state (n, 3, 4). Render with render_codes().
+
+    Needs fetch_chess.py. Train has 10000 positions: with 800 the particle readout memorised its train scenes
+    (diagnostic 2026-11-22), and chess shares the readout.
+    """
+
+    _SLICES: ClassVar[dict[str, slice]] = {
+        "train": slice(0, 10000),
+        "dev": slice(10000, 10080),
+        "test": slice(10080, N),
+    }
 
     def __init__(self, split: Literal["train", "dev", "test"], root: str = "data"):
         if split not in self._SLICES:
@@ -101,8 +132,8 @@ class ChessPositions:
         fens, moves = data["fen"][self._SLICES[split]], data["moves"][self._SLICES[split]]
         boards = [parse_fen(str(f)) for f in fens]
         self.fens, self.moves = fens, moves
-        self.obs = torch.tensor(np.stack([render(b) for b in boards]))
-        self.fut = torch.tensor(np.stack([[render(apply_move(b, str(m))) for m in ms] for b, ms in zip(boards, moves)]))
+        self.obs = torch.tensor(np.stack([codes(b) for b in boards]))
+        self.fut = torch.tensor(np.stack([[codes(apply_move(b, str(m))) for m in ms] for b, ms in zip(boards, moves)]))
         self.state = torch.tensor([[move_state(str(m)) for m in ms] for ms in moves], dtype=torch.float32)
 
     def __len__(self) -> int:

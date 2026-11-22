@@ -24,10 +24,11 @@ SOFTEN = 2.0  # px, keeps close passes finite
 DT, SUBSTEPS = 0.05, 20  # 20 x 0.05 = one time unit per observed frame
 FUT_EVERY = 2  # future frames every 2 time units: t = 2, 4, 6
 WALL = 4.0
-MIN_SEP = 5.0  # px between any two futures at t = 6 (the metrics' match tolerance is POS_TOL = 2 px)
+MIN_SEP = 5.0  # px between any two futures at t = 6 (max over balls and axes)
 MIN_DIST = 8.0  # px between balls at t = 0
 SIGMAS = (1.2, 1.8, 2.4)  # blob width per ball, px
 SPEED = 1.0  # px per time unit, std of each velocity component
+N_TRAIN = 20000  # train scenes (dev 80, test 128)
 
 # Mean L2 norm of a rendered train frame (seed 0): 5.7438, so encoder.input_scale = 0.0897.
 # Rerun tests/test_futures_benchmarks.py::test_input_scale if SIGMAS change.
@@ -95,15 +96,19 @@ def render(pos: torch.Tensor) -> torch.Tensor:
 
 
 class ChargedParticles:
-    """Ball positions per split: obs (n, 3, 3, 2), fut (n, 4, 3, 3, 2) in px. Render with render()."""
+    """Ball positions per split: obs (n, 3, 3, 2), fut (n, 4, 3, 3, 2) in px. Render with render().
 
-    _SLICES: ClassVar[dict[str, slice]] = {"train": slice(0, 800), "dev": slice(800, 880), "test": slice(880, 1008)}
+    Each split is its own stream (seed, seed + 1, seed + 2). Train has N_TRAIN scenes: with 800 the readout
+    memorised them (train error 0.1 px, dev 6-10 px; diagnostic 2026-11-22). Generating 20000 takes ~70 s.
+    """
+
+    _SPLITS: ClassVar[dict[str, tuple[int, int]]] = {"train": (N_TRAIN, 0), "dev": (80, 1), "test": (128, 2)}
 
     def __init__(self, split: Literal["train", "dev", "test"], seed: int = 0):
-        if split not in self._SLICES:
+        if split not in self._SPLITS:
             raise ValueError(f"unknown split {split!r}")
-        obs, fut, self.redrawn = generate(1008, seed)
-        self.obs, self.fut = obs[self._SLICES[split]], fut[self._SLICES[split]]
+        n, offset = self._SPLITS[split]
+        self.obs, self.fut, self.redrawn = generate(n, seed + offset)
 
     def __len__(self) -> int:
         return len(self.obs)
