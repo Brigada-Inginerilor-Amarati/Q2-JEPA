@@ -1,0 +1,12 @@
+# @package _global_
+# Charged particles (data/nri.py), whole-scene 64x64 clips, 4 hidden-charge futures. Same for every encoder:
+# python -m q2jepa.train +experiment=nri encoder=<cnn|vit|hqvit> prior=<...> seed=<0..2>
+# Fast iteration (2026-11-22): MovingMNIST's model sizes and tuned schedule, no per-benchmark tuning.
+defaults:
+  - override /dataset: nri
+encoder:
+  res: 64
+  input_norm: l2
+  input_scale: 0.0897  # data/nri.py: mean rendered-frame L2 norm 5.7438 / 64
+eval:
+  n_obs: 128

@@ -1,0 +1,12 @@
+# @package _global_
+# Chess (data/chess.py), boards as 3-frame 64x64 clips, 3 equally good moves as futures. Needs
+# scripts/fetch_chess.py. python -m q2jepa.train +experiment=chess encoder=<cnn|vit|hqvit> prior=<...> seed=<0..2>
+# Fast iteration (2026-11-22): MovingMNIST's model sizes and tuned schedule, no per-benchmark tuning.
+defaults:
+  - override /dataset: chess
+encoder:
+  res: 64
+  input_norm: l2
+  input_scale: 0.2001  # mean rendered-frame L2 norm 12.806 / 64 over the 800 fetched train boards
+eval:
+  n_obs: 128

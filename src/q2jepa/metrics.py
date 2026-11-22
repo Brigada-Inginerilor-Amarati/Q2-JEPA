@@ -85,6 +85,32 @@ def hep18_metrics(
     }
 
 
+def futures_metrics(pred: np.ndarray, truth: np.ndarray, tol: np.ndarray) -> dict[str, float]:
+    """Multi-future metrics for one observation (charged particles, chess), J equally likely futures.
+
+    pred: decoded samples (S, m); truth: the J futures (J, m); tol: per-dimension match tolerance (m,).
+    A sample is valid if every dimension is within tol of some future; it then counts for the nearest one.
+    min_ade and es are in units of tol.
+    """
+    n_s, n_fut = len(pred), len(truth)
+    err = np.abs(pred[:, None] - truth[None]) / tol  # (S, J, m)
+    worst = err.max(-1)
+    valid, nearest = worst.min(1) <= 1.0, worst.argmin(1)
+    cats = np.where(valid, nearest, n_fut)
+    freq = np.bincount(cats, minlength=n_fut + 1) / n_s
+    target = np.append(np.full(n_fut, 1 / n_fut), 0.0)
+    p, t = pred / tol, truth / tol
+    to_truth = np.linalg.norm(p[:, None] - t[None], axis=-1).mean()
+    pair = np.linalg.norm(p[:, None] - p[None], axis=-1).sum() / (n_s * (n_s - 1))
+    return {
+        "coverage": float(np.isin(np.arange(n_fut), cats[valid]).mean()),
+        "validity": float(valid.mean()),
+        "tv": float(0.5 * np.abs(freq - target).sum()),
+        "min_ade": float(err.mean(-1).min(0).mean()),
+        "es": float(to_truth - 0.5 * pair),
+    }
+
+
 ROUTES = 24  # D3IL: 2 x 3 x 4 gaps (App. B.4)
 
 

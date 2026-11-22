@@ -23,6 +23,14 @@ def build_benchmark(cfg, device):
         from q2jepa.benchmarks.d3il import D3ILBenchmark
 
         return D3ILBenchmark(cfg, device)
+    if name == "nri":
+        from q2jepa.benchmarks.nri import ChargedParticlesBenchmark
+
+        return ChargedParticlesBenchmark(cfg, device)
+    if name == "chess":
+        from q2jepa.benchmarks.chess import ChessBenchmark
+
+        return ChessBenchmark(cfg, device)
     raise ValueError(f"unknown dataset {name!r}")
 
 

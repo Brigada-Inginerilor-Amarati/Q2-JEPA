@@ -29,9 +29,12 @@ METRICS = {
     "mmnist": ("coverage", "validity", "tv", "min_ade", "es"),
     "hep18": ("coverage", "validity", "tv", "min_ade", "es", "shuffled_validity", "readout_validity"),
     "d3il": ("coverage", "tv", "acceptance", "readout_ade_m"),
+    "nri": ("coverage", "validity", "tv", "min_ade", "es", "readout_validity"),
+    "chess": ("coverage", "validity", "tv", "min_ade", "es", "readout_validity"),
 }
 PLOTTED = {"mmnist": ("coverage", "validity", "tv"), "hep18": ("coverage", "validity", "tv"),
-           "d3il": ("coverage", "tv", "acceptance")}  # fmt: skip
+           "d3il": ("coverage", "tv", "acceptance"), "nri": ("coverage", "validity", "tv"),
+           "chess": ("coverage", "validity", "tv")}  # fmt: skip
 
 
 def collect(roots: list[Path], split: str) -> list[dict]:
