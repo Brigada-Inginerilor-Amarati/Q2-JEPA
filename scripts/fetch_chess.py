@@ -1,4 +1,4 @@
-"""Stream the start of the Lichess evaluations database (CC0) and keep 1008 positions with 3 equally good moves.
+"""Stream the start of the Lichess evaluations database (CC0) and keep N (data/chess.py) positions with 3 equally good moves.
 
 pip install zstandard && python scripts/fetch_chess.py [--root data]
 
@@ -19,10 +19,9 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from q2jepa.data.chess import CP_SPREAD, MOVES, PATH, sha256
+from q2jepa.data.chess import CP_SPREAD, MOVES, PATH, N, sha256
 
 URL = "https://database.lichess.org/lichess_db_eval.jsonl.zst"
-N = 1008
 
 
 def pick(entry: dict) -> list[str] | None:

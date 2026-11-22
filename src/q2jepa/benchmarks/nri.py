@@ -1,18 +1,28 @@
 """Charged particles (data/nri.py): 3 balls, 4 hidden-charge futures, whole-scene clips. State: the balls' positions
-in the 3 future frames (18 numbers, px); a sample matches a future if every coordinate is within POS_TOL px."""
+in the 3 future frames (18 numbers, px). Balls are matched as a set (any of the 3! orders), because the readout
+can confuse them: they differ only in blob width. Validity: metrics.match_futures."""
+
+from itertools import permutations
 
 import torch
 
 from q2jepa.benchmarks.futures import FuturesBenchmark
-from q2jepa.data.nri import ChargedParticles, render
+from q2jepa.data.nri import BALLS, ChargedParticles, render
 
-POS_TOL = 2.0  # px; futures are generated at least MIN_SEP = 5 px apart
+# state index = frame * 6 + ball * 2 + axis; one index list per ball order
+BALL_PERMS = [
+    [f * 2 * BALLS + 2 * b + a for f in range(3) for b in p for a in range(2)] for p in permutations(range(BALLS))
+]
 
 
 class ChargedParticlesBenchmark(FuturesBenchmark):
-    tol = (POS_TOL,) * 18
+    src_dims, scale, perms = 3, 1.0, BALL_PERMS  # source: positions (3 frames, 3 balls, 2), px
+    max_radius = 4.0  # px RMS, about the widest blob (2 x 2.4 px); binds only when futures are far apart
 
     def load(self, split: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         ds = ChargedParticles(split)
         obs, fut = torch.tensor(ds.obs, dtype=torch.float32), torch.tensor(ds.fut, dtype=torch.float32)
-        return render(obs), render(fut), fut.flatten(2)  # (n, 3, 64, 64), (n, 4, 3, 64, 64), (n, 4, 18)
+        return obs, fut, fut.flatten(2)  # (n, 3, 3, 2), (n, 4, 3, 3, 2), (n, 4, 18)
+
+    def render(self, src: torch.Tensor) -> torch.Tensor:
+        return render(src)  # (..., 3, 3, 2) -> (..., 3, 64, 64)

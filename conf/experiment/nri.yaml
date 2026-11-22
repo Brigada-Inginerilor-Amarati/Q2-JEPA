@@ -10,3 +10,6 @@ encoder:
   input_scale: 0.0897  # data/nri.py: mean rendered-frame L2 norm 5.7438 / 64
 eval:
   n_obs: 128
+readout:  # benchmarks/futures.py: larger MLP on 10-20k train scenes; 4000 x 64 underfit (diagnostic 2026-11-22)
+  iters: 10000
+  batch: 256

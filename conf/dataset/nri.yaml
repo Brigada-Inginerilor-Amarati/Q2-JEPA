@@ -1,1 +1,2 @@
-name: nri  # splits are fixed in the data module (800 / 80 / 128)
+name: nri
+n_train: 20000  # provenance only: data/nri.py fixes the splits (20000 / 80 / 128)

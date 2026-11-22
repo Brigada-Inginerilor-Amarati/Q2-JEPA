@@ -7,6 +7,9 @@ defaults:
 encoder:
   res: 64
   input_norm: l2
-  input_scale: 0.2001  # mean rendered-frame L2 norm 12.806 / 64 over the 800 fetched train boards
+  input_scale: 0.2001  # mean rendered-frame L2 norm 12.806 / 64 over the first 800 train boards
 eval:
   n_obs: 128
+readout:  # benchmarks/futures.py: larger MLP on 10-20k train scenes; 4000 x 64 underfit (diagnostic 2026-11-22)
+  iters: 10000
+  batch: 256

@@ -1,1 +1,2 @@
-name: chess  # splits are fixed in the data module (800 / 80 / 128)
+name: chess
+n_train: 10000  # provenance only: data/chess.py fixes the splits (10000 / 80 / 128)
