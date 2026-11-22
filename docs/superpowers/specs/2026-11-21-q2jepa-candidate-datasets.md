@@ -39,15 +39,34 @@ where the result is informative.
 
 | | Charged particles (`nri`) | Chess (`chess`) |
 |---|---|---|
-| Data | `data/nri.py`: own NRI-style simulator, generated on the fly | `scripts/fetch_chess.py`: first 1008 qualifying positions of the Lichess eval stream → `data/chess/positions.npz` |
+| Data | `data/nri.py`: own NRI-style simulator, generated on the fly | `scripts/fetch_chess.py`: first 10208 qualifying positions of the Lichess eval stream → `data/chess/positions.npz` |
 | Futures | 4: hidden charges (+1, ±1, ±1) switch on at t = 0; balls fly freely while observed. Futures ≥ 5 px apart at t = 6 | 3: the top 3 engine moves, white to move, all within 30 cp of the best |
 | Clip | 3 balls as Gaussian blobs of different widths, frames t = −2, −1, 0 / t = 2, 4, 6 | board: white pieces, black pieces, all pieces (8 px squares, intensity = piece type) |
-| State, match | ball positions in the 3 future frames (18 numbers); all within 2 px | the move's squares (4 numbers); exact squares |
-| Splits | 800 / 80 / 128 | 800 / 80 / 128 |
+| State, match | ball positions in the 3 future frames (18 numbers), balls matched as a set | the move's squares (4 numbers) |
+| Splits | 20000 / 80 / 128 (one stream per split) | 10000 / 80 / 128 |
 
 Shared code: `benchmarks/futures.py` (whole-scene clips, J futures as targets), `readout/futures.py` (MLP [h; t] →
 state), `metrics.futures_metrics` (coverage, validity, TV vs uniform, minADE and ES in tolerance units) and a
-readout-only validity diagnostic. Runs: `python scripts/run_grid.py --bench <nri|chess> --stage grid --seeds 0`.
+readout-only validity diagnostic (§4.1). Runs: `python scripts/run_grid.py --bench <nri|chess> --stage grid --seeds 0`.
 
 Chess is not a video world model: the "clip" is three views of one board and the futures are positions one move
 later. It tests whether the latent prior can cover several equally good discrete outcomes; results tables say so.
+
+### 4.1 Readout fix (2026-11-22)
+
+The first particle grid (800 train scenes, 18 coordinates each within 2 px) gave validity 0 for CNN and ViT, and
+`readout_validity` 0 too: the readout could not decode even the true futures. Readout diagnostic on the CNN run
+(frozen encoder, dev split; RMS error per coordinate, nearest = decoded future is nearest to its own):
+
+| Readout train data | Readout | Train RMS px | Dev RMS px | Dev nearest | Dev unique match |
+|---|---|---|---|---|---|
+| 800 scenes | MLP 128, 4000 steps | 3.2-4.2 | 6.2-10.4 | 0.60 | 0.07 |
+| 800 scenes | MLP 512, 10000 steps, balls as a set | 0.1 | 5.8-7.3 | 0.85 | 0.16 |
+| 20800 scenes | MLP 512, 10000 steps, balls as a set | 2.9-3.2 | 3.4-3.7 | 0.98 | 0.62 |
+
+The readout memorised 800 scenes. Changes: particles train on 20000 generated scenes, chess on 10000 positions
+(sources kept compact on the device and rendered per batch); readout MLP 512 wide, 10000 steps of 256
+(`conf/experiment/nri.yaml`, `chess.yaml`); balls matched as a set (the readout confuses them, they differ only in
+width). Validity (`metrics.match_futures`): a sample is valid if it lies within half the gap from its nearest future
+to that future's nearest other future, so it matches exactly one future. This needs no tuned tolerance. The
+first-pass runs (800 scenes, old metric) are not reported.

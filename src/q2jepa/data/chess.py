@@ -20,8 +20,9 @@ CP_SPREAD = 30
 INTENSITY = {"p": 0.3, "n": 0.45, "b": 0.55, "r": 0.7, "q": 0.85, "k": 1.0}
 PATH = Path("chess/positions.npz")  # under dataset.root
 N = 10208  # positions: train 10000, dev 80, test 128
-# sha256 of the fetched positions (2026-11-22): the Lichess stream is not versioned, so a re-fetch must reproduce it
-SHA256 = "23d6cd29f0cb4a22e3ce5b1da26990a39966036c06ab6a105ee5447dc4efdbe7"
+# sha256 of the 10208 fetched positions (2026-11-22; the first 1008 equal the first fetch). The Lichess stream is
+# not versioned, so a re-fetch must reproduce it.
+SHA256 = "6876a1f330b2e331b2d7ff53e8f95332ff253c1de3b3fe32a48791559c722ce8"
 
 
 def sha256(path: Path) -> str:
