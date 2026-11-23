@@ -115,3 +115,22 @@ by noise; the dev split is not enlarged because that would change the train slic
 to tune chess was made on seed-0 test metrics (a benchmark-level choice, not per-encoder selection); the results
 page says so.
 
+## 5. TaxiBJ, fast validation (2026-11-23)
+
+Team decision: two real datasets, validated fast (seed 0, MovingMNIST's schedules, no own tuning): TaxiBJ here,
+BAIR robot pushing (Paul). Something-Something v2 was set aside (account and licence, one future per clip).
+
+| | |
+|---|---|
+| Data | OpenSTL's preprocessed TaxiBJ (Zhang et al., AAAI 2017): `scripts/fetch_taxibj.py` -> `data/taxibj/dataset.npz` (sha256 pinned in `data/taxibj.py`) |
+| Sample | 4 observed + 4 future half-hour inflow/outflow maps, 32 x 32; we use the last 3 observed and first 3 future maps, in [0, 1] |
+| Clip | per frame: inflow | outflow side by side, rows doubled -> 64 x 64 |
+| Futures | one (the recorded maps): no coverage, validity or TV |
+| State, readout | the 3 future maps (6144 values), shared [h; t] MLP, MSE loss |
+| Metrics | `metrics.flow_metrics`: `mse_min` (best of K samples), `mse_mean`, `mae_min`, `es` (RMS energy score), and `readout_mse` (readout on the encoded true future) |
+| Splits | train 20381, dev 80 (last train samples), test 500 (OpenSTL's) |
+
+Reference errors on test (per value, [0, 1] scale): copy the last observed map 0.00168, train mean map 0.00286.
+Errors are per value on the [0, 1] scale, so they are not OpenSTL's per-frame MSE. Run:
+`python scripts/run_grid.py --bench taxibj --stage grid --seeds 0`.
+
