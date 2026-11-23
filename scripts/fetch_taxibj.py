@@ -1,9 +1,9 @@
-"""Download OpenSTL's preprocessed TaxiBJ (559 MB zip, 2.6 GB dataset.npz) to <root>/taxibj/dataset.npz.
+"""Download OpenSTL's preprocessed TaxiBJ (559 MB zip, 2.6 GB dataset.npz) and write <root>/taxibj/maps.npz.
 
 python scripts/fetch_taxibj.py [--root data]
 
 Source: the OpenSTL v0.1.0 release (tools/prepare_data/download_taxibj.sh in chengtan9907/OpenSTL). The file is
-checked against data/taxibj.py's SHA256.
+checked against data/taxibj.py's SHA256; maps.npz (the kept frames, float16) is derived from it.
 """
 
 import argparse
@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from q2jepa.data.taxibj import PATH, SHA256, URL
+from q2jepa.data.taxibj import MAPS, PATH, SHA256, URL, compact
 
 
 def file_sha256(path: Path) -> str:
@@ -43,7 +43,8 @@ def main(argv=None) -> int:
     got = file_sha256(out)
     if got != SHA256:
         raise SystemExit(f"{out}: sha256 {got} differs from the pinned {SHA256}")
-    print(f"{out} ok")
+    compact(out, Path(args.root) / MAPS)
+    print(f"{out} ok, {Path(args.root) / MAPS} written")
     return 0
 
 

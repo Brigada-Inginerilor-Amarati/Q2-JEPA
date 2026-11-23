@@ -23,15 +23,18 @@ def _fake_root(tmp_path, n_train=96, n_test=6):
               (("X_train", n_train), ("Y_train", n_train), ("X_test", n_test), ("Y_test", n_test))}  # fmt: skip
     (tmp_path / "taxibj").mkdir(parents=True)
     np.savez(tmp_path / "taxibj" / "dataset.npz", **arrays)
+    taxibj.compact(tmp_path / "taxibj" / "dataset.npz", tmp_path / "taxibj" / "maps.npz")
     return tmp_path, arrays
 
 
 def test_splits_keep_the_last_observed_and_first_future_maps(tmp_path):
     root, a = _fake_root(tmp_path)
     train, dev, test = (taxibj.TaxiBJ(s, str(root)) for s in ("train", "dev", "test"))
-    assert (len(train), len(dev), len(test)) == (96 - taxibj.N_DEV, taxibj.N_DEV, 6)
-    assert train.obs.shape == (16, 3, 2, 32, 32) and train.fut.shape == (16, 3, 2, 32, 32)
+    n_train = 96 - taxibj.N_DEV - taxibj.GAP  # GAP windows dropped so train never shares maps with dev
+    assert (len(train), len(dev), len(test)) == (n_train, taxibj.N_DEV, 6)
+    assert train.obs.shape == (n_train, 3, 2, 32, 32) and train.fut.shape == (n_train, 3, 2, 32, 32)
     np.testing.assert_allclose(dev.obs[0].float().numpy(), (a["X_train"][16, 1:4] + 1) / 2, atol=1e-3)
+    np.testing.assert_allclose(train.fut[-1].float().numpy(), (a["Y_train"][n_train - 1, :3] + 1) / 2, atol=1e-3)
     np.testing.assert_allclose(test.fut[5].float().numpy(), (a["Y_test"][5, :3] + 1) / 2, atol=1e-3)
     with pytest.raises(FileNotFoundError, match="fetch_taxibj"):
         taxibj.TaxiBJ("dev", str(tmp_path / "missing"))

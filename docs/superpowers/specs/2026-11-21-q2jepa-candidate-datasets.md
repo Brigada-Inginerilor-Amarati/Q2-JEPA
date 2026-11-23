@@ -122,13 +122,13 @@ BAIR robot pushing (Paul). Something-Something v2 was set aside (account and lic
 
 | | |
 |---|---|
-| Data | OpenSTL's preprocessed TaxiBJ (Zhang et al., AAAI 2017): `scripts/fetch_taxibj.py` -> `data/taxibj/dataset.npz` (sha256 pinned in `data/taxibj.py`) |
+| Data | OpenSTL's preprocessed TaxiBJ (Zhang et al., AAAI 2017): `scripts/fetch_taxibj.py` -> `data/taxibj/dataset.npz` (sha256 pinned in `data/taxibj.py`) and the derived float16 `maps.npz` that runs load |
 | Sample | 4 observed + 4 future half-hour inflow/outflow maps, 32 x 32; we use the last 3 observed and first 3 future maps, in [0, 1] |
 | Clip | per frame: inflow | outflow side by side, rows doubled -> 64 x 64 |
 | Futures | one (the recorded maps): no coverage, validity or TV |
 | State, readout | the 3 future maps (6144 values), shared [h; t] MLP, MSE loss |
 | Metrics | `metrics.flow_metrics`: `mse_min` (best of K samples), `mse_mean`, `mae_min`, `es` (RMS energy score), and `readout_mse` (readout on the encoded true future) |
-| Splits | train 20381, dev 80 (last train samples), test 500 (OpenSTL's) |
+| Splits | train 20373, dev 80 (last train windows; the 8 before them dropped, as windows overlap), test 500 (OpenSTL's) |
 
 Reference errors on test (per value, [0, 1] scale): copy the last observed map 0.00168, train mean map 0.00286.
 Errors are per value on the [0, 1] scale, so they are not OpenSTL's per-frame MSE. Run:

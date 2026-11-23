@@ -143,6 +143,8 @@ def flow_metrics(pred: np.ndarray, truth: np.ndarray) -> dict[str, float]:
     err = pred - truth[None]
     mse, mae = (err**2).mean(-1), np.abs(err).mean(-1)
     n_s = len(pred)
+    if n_s < 2:
+        raise ValueError("flow_metrics needs at least 2 samples (eval.k_eval >= 2) for the energy score")
     rms = np.sqrt(mse)
     sq = (pred**2).sum(-1)  # pairwise distances via the Gram matrix: S x S x m would not fit for m = 6144
     d2 = np.maximum(sq[:, None] + sq[None] - 2 * pred @ pred.T, 0.0) / pred.shape[-1]
