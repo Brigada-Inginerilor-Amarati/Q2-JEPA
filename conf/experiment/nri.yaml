@@ -8,6 +8,9 @@ encoder:
   res: 64
   input_norm: l2
   input_scale: 0.0897  # data/nri.py: mean rendered-frame L2 norm 5.7438 / 64
+  # ViT and HQViT keep every patch's position: with mean pooling the readout found the true future in 2-3% of
+  # cases (seed 0, 2026-11-23). Pooling acts after the circuits; the CNN ignores it.
+  pool: flatten
 eval:
   n_obs: 128
 readout:  # benchmarks/futures.py: larger MLP on 10-20k train scenes; 4000 x 64 underfit (diagnostic 2026-11-22)

@@ -116,6 +116,15 @@ def _hydra_pool(run_dir, pool):
     (run_dir / ".hydra" / "config.yaml").write_text(f"encoder:\n  name: vit\n  pool: {pool}\n")
 
 
+def test_bench_preset_pooling(tmp_path):
+    # conf/experiment/nri.yaml sets encoder.pool; nri still reuses MovingMNIST's (mean-pooled) tune runs.
+    assert run_grid.default_pool("nri") == "flatten" and run_grid.default_pool("chess") == "mean"
+    _tuned(tmp_path, "mmnist", ALL_EQUAL)
+    for s in run_grid.SCHEDULES:
+        _hydra_pool(tmp_path / "mmnist" / "tune" / f"vit-{s}", "mean")
+    assert len(run_grid.plan("nri", "grid", tmp_path, pool="flatten")) == 18
+
+
 def test_stale_pooling_is_refused(tmp_path, monkeypatch):
     # phase-2 spec §5.6: twin/HQViT tune runs trained with another pooling must not pick the grid's schedule.
     assert run_grid.default_pool() == "mean"

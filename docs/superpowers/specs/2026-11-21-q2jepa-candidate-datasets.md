@@ -72,3 +72,32 @@ to that future's nearest other future, so it matches exactly one future, capped 
 blob) and at the exact squares (chess: RMS 0.25). With balls matched as a set, particle ES is descriptive only. The
 first-pass runs (800 scenes, old metric) are void: they were moved out of `runs/nri/grid` on the VM, so the grid
 launcher cannot skip or resume them.
+
+### 4.2 Seed-0 grid and second fix (2026-11-23)
+
+Seed 0 on the fixed readout (commit 9c56c5a, test split, 128 observations): every row at the floor.
+
+| Bench | Encoder | validity (QCBM / Softmax) | minADE | readout_validity |
+|---|---|---|---|---|
+| particles | CNN | 0.011 / 0.004 | 5.7 px | 0.42 / 0.39 |
+| particles | ViT | 0.004 / 0.000 | 6.8 px | 0.02 |
+| particles | HQViT | 0.002 / 0.000 | 6.8 px | 0.03 |
+| chess | CNN | 0.025 / 0.008 | 1.5 sq | 0.01 |
+| chess | ViT | 0.006 / 0.017 | 0.92 sq | 0.16-0.18 |
+| chess | HQViT | 0.014 / 0.014 | 1.0 sq | 0.08-0.13 |
+
+Two bottlenecks, two changes (team decision 2026-11-23):
+
+- Chess: regressing 4 square coordinates to within 0.25 rarely hits the exact move, even from the true future. The
+  readout now classifies the from- and to-square (2 x 64 logits, cross-entropy) and decodes the argmax squares
+  (`benchmarks/chess.py`, `readout/futures.py`); validity is then an exact move match.
+- Particles: ViT and HQViT mean-pool the patches and lose where each ball is (readout 2-3% vs CNN 42%).
+  `conf/experiment/nri.yaml` sets `encoder.pool: flatten` for both (pooling is after the circuits, so the twin rule
+  holds); the grid still uses MovingMNIST's mean-pooled schedules. `scripts/run_grid.py` reads the preset's pooling.
+  The flattened fusion head takes 3 x 64 x 64 inputs (CNN: far fewer) on an untuned schedule, so a particle
+  ViT-vs-CNN gap is not an encoder effect alone; HQViT vs ViT stays matched.
+
+The seed-0 runs above are void for the new grid: move `runs/nri/grid` ViT/HQViT runs to `runs/nri/grid-meanpool/`
+(the launcher refuses them otherwise) and all of `runs/chess/grid` to `runs/void/chess-regression/` before rerunning:
+the launcher skips any run with `metrics.json` and would mix the two chess readouts. The particle CNN runs are
+unchanged by this fix and can stay.

@@ -12,6 +12,7 @@ import q2jepa.config  # noqa: F401
 from q2jepa.benchmarks.nri import BALL_PERMS
 from q2jepa.data import chess, nri
 from q2jepa.metrics import futures_metrics, match_futures
+from q2jepa.readout.futures import decode_squares, square_index, square_loss
 from q2jepa.train import run
 
 CONF = str(Path(__file__).resolve().parents[1] / "conf")
@@ -103,6 +104,17 @@ def test_chess_moves_and_render():
     start = chess.parse_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     for b in (board, castled, promo, start):  # the GPU renderer equals the reference one
         assert torch.equal(chess.render_codes(torch.tensor(chess.codes(b))), torch.tensor(chess.render(b)))
+
+
+def test_square_readout_round_trips_moves():
+    state = torch.tensor([chess.move_state(m) for m in ("e2e4", "g1f3", "e1h1", "a7a8q")])
+    idx = square_index(state)
+    assert idx[0].tolist() == [1 * 8 + 4, 3 * 8 + 4]
+    logits = torch.full((4, 128), -10.0)
+    logits[torch.arange(4), idx[:, 0]] = 10.0
+    logits[torch.arange(4), 64 + idx[:, 1]] = 10.0
+    assert torch.equal(decode_squares(logits), state)
+    assert square_loss(logits, state) < 1e-6 < square_loss(-logits, state)
 
 
 def _fake_chess_root(tmp_path):

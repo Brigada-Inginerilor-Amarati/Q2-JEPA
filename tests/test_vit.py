@@ -26,8 +26,9 @@ def test_to_patches_matches_quantum_layout():
 
 @pytest.mark.parametrize("res,patch", [(16, 4), (32, 4), (64, 8)])
 @pytest.mark.parametrize("pool", ["mean", "flatten", "softargmax"])
-def test_vit_shapes(res, patch, pool):
-    enc = ViTEncoder(res, patch=patch, pool=pool, pos_emb="sincos")
+@pytest.mark.parametrize("tokens", ["frame", "spacetime"])
+def test_vit_shapes(res, patch, pool, tokens):
+    enc = ViTEncoder(res, patch=patch, pool=pool, pos_emb="sincos", tokens=tokens)
     assert enc(torch.rand(5, 3, res, res)).shape == (5, 64)
 
 
