@@ -50,8 +50,13 @@ def encoder_overrides(encoder: str) -> list[str]:
     return [f"encoder={encoder}", *(["quantum.hqvit_train=torch"] if encoder == "hqvit" else [])]
 
 
-def default_pool() -> str:
-    """encoder.pool of the twin (and HQViT, which inherits it) on this commit."""
+def default_pool(bench: str | None = None) -> str:
+    """encoder.pool of the twin (and HQViT, which inherits it) on this commit: the bench preset's, else vit.yaml's."""
+    if bench is not None:
+        preset = REPO / "conf" / "experiment" / f"{PRESET[bench].split('=', 1)[1]}.yaml"
+        m = re.search(r"^encoder:(?:\n[ \t]+.*)*?\n[ \t]+pool:\s*(\S+)", preset.read_text(), re.MULTILINE)
+        if m:
+            return m.group(1)
     m = re.search(r"^pool:\s*(\S+)", (REPO / "conf" / "encoder" / "vit.yaml").read_text(), re.MULTILINE)
     return m.group(1) if m else "mean"
 
@@ -113,7 +118,10 @@ def plan(
     jobs = []
     folds = FOLDS if bench == "d3il" else (None,)
     for e in encoders:
-        sched = best_schedule(tune_root or root, bench, e, pool)
+        # Benches tuned on MovingMNIST check its tune runs against its own pooling, not this bench's.
+        sched = best_schedule(
+            tune_root or root, bench, e, pool if TUNED_ON[bench] == bench else default_pool(TUNED_ON[bench])
+        )
         rows = list(priors) + (["product_qcbm"] if bench == "hep18" and e == "hqvit" else [])
         for p in rows:
             for seed in seeds:
@@ -224,7 +232,7 @@ def main(argv=None) -> int:
         args.root = Path(DEFAULT_ROOT)
 
     base = args.root / args.bench / args.stage
-    pool = next((o.split("=", 1)[1] for o in args.set if o.startswith("encoder.pool=")), default_pool())
+    pool = next((o.split("=", 1)[1] for o in args.set if o.startswith("encoder.pool=")), default_pool(args.bench))
     jobs = plan(args.bench, args.stage, args.root, args.encoders, args.priors, args.seeds, args.tune_root, pool)
     for j in jobs:  # a finished run counts only if it used this commit's pooling
         if (base / j.name / j.metrics).exists():

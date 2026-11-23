@@ -3,7 +3,7 @@
 tokens="frame": each frame is encoded separately and fused after pooling (HQViT paper: one image per circuit).
 tokens="spacetime": the patches of all frames form one token set, so attention compares patches across frames
 (HQViT: the index register runs over (frame, patch)); a sinusoidal frame embedding marks time, and tokens are
-still pooled per frame (mean, or mean + soft-argmax) before the shared fusion head.
+still pooled per frame (mean, mean + soft-argmax, or flatten) before the shared fusion head.
 Patch layout matches quantum/attention.py: patch i row-major over the grid, pixel l row-major in the patch.
 
 With pool="mean" and pos_emb="none" the encoder is invariant to permuting patches, exactly like HQViT's
@@ -99,8 +99,6 @@ class ViTEncoder(nn.Module):
             raise ValueError(f"res {res} is not a multiple of patch {patch}")
         if tokens not in ("frame", "spacetime"):
             raise ValueError(f"unknown tokens {tokens!r}")
-        if tokens == "spacetime" and pool == "flatten":
-            raise ValueError("tokens=spacetime does not support pool=flatten")
         self.patch, self.pool, self.spacetime, self.frames = patch, pool, tokens == "spacetime", frames
         self.grid = res // patch
         tokens, dim = (res // patch) ** 2, patch * patch

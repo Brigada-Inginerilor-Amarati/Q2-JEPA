@@ -3,7 +3,8 @@
 A subclass provides `load(split)` -> compact observation and future sources (ball positions, board codes), shape
 (n, *src) and (n, J, *src), and future states (n, J, m); `render(src)` -> clips (..., 3, 64, 64); `src_dims`
 (trailing dims of one source); `scale`, the state unit; and optionally `perms`, state permutations that describe
-the same scene. Sources stay on the device and are rendered per batch, so the train split can be large (the
+the same scene. A subclass may also replace the readout head (`readout_dim`, `readout_fit_loss`, `decode`), e.g.
+chess classifies squares instead of regressing them; metrics always see decoded states. Sources stay on the device and are rendered per batch, so the train split can be large (the
 readout overfit 800 scenes, 2026-11-22). The encoder sees whole clips (dataset.agents = 1); targets are the J
 encoded futures. The readout decodes [h; t] to the state; metrics match decoded samples to the J true futures
 (metrics.futures_metrics).
@@ -47,6 +48,17 @@ class FuturesBenchmark:
         out = torch.cat([encode_clips(encoder, self.render(c), self.cfg.encoder) for c in flat.split(ENCODE_CHUNK)])
         return out.reshape(*lead, -1)
 
+    def readout_dim(self) -> int:
+        """Readout outputs per sample; default: the state itself (regression)."""
+        return self.state.shape[-1]
+
+    def readout_fit_loss(self, out: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return readout_loss(out, target, self.scale, self.perms_t)
+
+    def decode(self, out: torch.Tensor) -> torch.Tensor:
+        """Readout outputs (..., readout_dim) -> states (..., m)."""
+        return out
+
     def batch(self, size: int) -> torch.Tensor:
         return torch.randint(len(self.obs), (size,)).to(self.device)
 
@@ -55,7 +67,7 @@ class FuturesBenchmark:
 
     def fit_readout(self, cfg, encoder, out_dir, log) -> StateReadout:
         reseed(cfg.seed, READOUT_SEED_OFFSET)
-        readout = StateReadout(cfg.encoder.d, self.state.shape[-1]).to(self.device)
+        readout = StateReadout(cfg.encoder.d, self.readout_dim()).to(self.device)
         path = out_dir / "readout.pt"
         if path.exists():
             readout.load_state_dict(torch.load(path, map_location=self.device, weights_only=True))
@@ -68,7 +80,7 @@ class FuturesBenchmark:
             reseed(cfg.seed, READOUT_SEED_OFFSET + it)
             i = torch.randint(len(self.obs), (r.batch,)).to(self.device)
             j = torch.randint(n_fut, (r.batch,)).to(self.device)
-            loss = readout_loss(readout(h_all[i], t_all[i, j]), self.state[i, j], self.scale, self.perms_t)
+            loss = self.readout_fit_loss(readout(h_all[i], t_all[i, j]), self.state[i, j])
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(readout.parameters(), r.clip)
@@ -88,7 +100,7 @@ class FuturesBenchmark:
         obs, fut, state = obs[:n], fut[:n], state[:n]
         h = self.encode_src(encoder, obs)  # (n, d)
         pred = predictor(h, prior.sample(h, k))  # (n, K, d)
-        dec = readout(h[:, None].expand(-1, k, -1), pred).cpu().double().numpy()
+        dec = self.decode(readout(h[:, None].expand(-1, k, -1), pred)).cpu().double().numpy()
         truth, perms = state.cpu().double().numpy(), self.perms_t.cpu().numpy()
         per_obs = [futures_metrics(dec[i], truth[i], self.scale, perms, self.max_radius) for i in range(n)]
         metrics = {key: float(np.mean([m[key] for m in per_obs])) for key in per_obs[0]}
@@ -96,7 +108,8 @@ class FuturesBenchmark:
         # Readout-only diagnostic: decode each encoded true future with the same validity rule. Its rate is the
         # ceiling the world model's validity can reach through this readout.
         n_fut = fut.shape[1]
-        rd = readout(h[:, None].expand(-1, n_fut, -1), self.encode_src(encoder, fut)).cpu().double().numpy()
+        rd = readout(h[:, None].expand(-1, n_fut, -1), self.encode_src(encoder, fut))
+        rd = self.decode(rd).cpu().double().numpy()
         own = []
         for i in range(n):
             valid, nearest, _ = match_futures(rd[i], truth[i], self.scale, perms, self.max_radius)
