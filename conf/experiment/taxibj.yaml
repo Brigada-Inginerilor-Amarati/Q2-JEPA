@@ -1,0 +1,15 @@
+# @package _global_
+# TaxiBJ crowd flow (data/taxibj.py, scripts/fetch_taxibj.py): 3 observed inflow|outflow maps as a 64x64 clip, one
+# future (the next 3 maps). python -m q2jepa.train +experiment=taxibj encoder=<cnn|vit|hqvit> prior=<...> seed=<0..2>
+# Fast validation (2026-11-23): MovingMNIST's model sizes and schedules, no own tuning, seed 0 first.
+defaults:
+  - override /dataset: taxibj
+encoder:
+  res: 64
+  input_norm: l2
+  input_scale: 0.1099  # mean rendered-frame L2 norm 7.0316 / 64 over the first 800 train samples
+eval:
+  n_obs: 500
+readout:  # the shared [h; t] MLP decodes 6144 map values
+  iters: 10000
+  batch: 256

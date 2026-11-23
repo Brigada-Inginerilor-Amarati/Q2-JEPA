@@ -31,10 +31,11 @@ METRICS = {
     "d3il": ("coverage", "tv", "acceptance", "readout_ade_m"),
     "nri": ("coverage", "validity", "tv", "min_ade", "es", "readout_validity"),
     "chess": ("coverage", "validity", "tv", "min_ade", "es", "readout_validity"),
+    "taxibj": ("mse_min", "mse_mean", "mae_min", "es", "readout_mse"),
 }
 PLOTTED = {"mmnist": ("coverage", "validity", "tv"), "hep18": ("coverage", "validity", "tv"),
            "d3il": ("coverage", "tv", "acceptance"), "nri": ("coverage", "validity", "tv"),
-           "chess": ("coverage", "validity", "tv")}  # fmt: skip
+           "chess": ("coverage", "validity", "tv"), "taxibj": ("mse_min", "mse_mean", "readout_mse")}  # fmt: skip
 
 
 def collect(roots: list[Path], split: str) -> list[dict]:
@@ -115,7 +116,8 @@ def figure(dataset: str, groups: dict[tuple, list[dict]]) -> plt.Figure:
             ax.scatter(np.full(len(rows), x), [r["metrics"][m] for r in rows], s=10, color=INK, zorder=3)
         labels = [enc + (f"\n{sched}" if len(schedules) > 1 else "") for enc, sched in columns]
         ax.set_xticks(range(len(columns)), labels, fontsize=8)
-        ax.set_title(m + (" (lower is better)" if m == "tv" else ""), fontsize=10, color=INK)
+        lower = m == "tv" or m.startswith(("mse", "mae", "readout_mse")) or m in ("es", "min_ade")
+        ax.set_title(m + (" (lower is better)" if lower else ""), fontsize=10, color=INK)
         ax.set_facecolor(SURFACE)
         ax.tick_params(labelsize=8, colors=MUTED)
         ax.grid(axis="y", alpha=0.2)

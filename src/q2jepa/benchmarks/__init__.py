@@ -31,6 +31,10 @@ def build_benchmark(cfg, device):
         from q2jepa.benchmarks.chess import ChessBenchmark
 
         return ChessBenchmark(cfg, device)
+    if name == "taxibj":
+        from q2jepa.benchmarks.taxibj import TaxiBJBenchmark
+
+        return TaxiBJBenchmark(cfg, device)
     raise ValueError(f"unknown dataset {name!r}")
 
 

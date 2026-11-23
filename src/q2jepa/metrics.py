@@ -134,6 +134,30 @@ def futures_metrics(
     }
 
 
+def flow_metrics(pred: np.ndarray, truth: np.ndarray) -> dict[str, float]:
+    """Single-future metrics for one observation (TaxiBJ): pred (S, m) decoded samples, truth (m,), values in [0, 1].
+
+    mse_min / mae_min: error of the best of the S samples (oracle, as minADE); mse_mean: average over samples;
+    es: energy score with the RMS distance (proper for one future; lower is better). Units: per value, [0, 1] scale.
+    """
+    err = pred - truth[None]
+    mse, mae = (err**2).mean(-1), np.abs(err).mean(-1)
+    n_s = len(pred)
+    if n_s < 2:
+        raise ValueError("flow_metrics needs at least 2 samples (eval.k_eval >= 2) for the energy score")
+    rms = np.sqrt(mse)
+    sq = (pred**2).sum(-1)  # pairwise distances via the Gram matrix: S x S x m would not fit for m = 6144
+    d2 = np.maximum(sq[:, None] + sq[None] - 2 * pred @ pred.T, 0.0) / pred.shape[-1]
+    np.fill_diagonal(d2, 0.0)
+    pair = np.sqrt(d2).sum() / (n_s * (n_s - 1))
+    return {
+        "mse_min": float(mse.min()),
+        "mse_mean": float(mse.mean()),
+        "mae_min": float(mae.min()),
+        "es": float(rms.mean() - 0.5 * pair),
+    }
+
+
 ROUTES = 24  # D3IL: 2 x 3 x 4 gaps (App. B.4)
 
 

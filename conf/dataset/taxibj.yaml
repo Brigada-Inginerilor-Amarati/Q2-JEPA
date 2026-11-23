@@ -1,0 +1,2 @@
+name: taxibj
+n_train: 20373  # provenance only: data/taxibj.py fixes the splits (20373 / 80 dev / 500 test)
