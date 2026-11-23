@@ -26,17 +26,23 @@ SPLITS = ("train", "dev", "test")
 
 
 def compact(src: Path, out: Path) -> None:
-    """dataset.npz -> maps.npz: <split>_obs, <split>_fut (n, 3, 2, 32, 32) float16 in [0, 1]."""
+    """dataset.npz -> maps.npz: <split>_obs, <split>_fut (n, 3, 2, 32, 32) float16 in [0, 1].
+
+    One source array in memory at a time (1.3 GB float64), converted in chunks: the VM's RAM is shared with runs.
+    """
     z = np.load(src)
+    cut = {"train": slice(0, -(N_DEV + GAP)), "dev": slice(-N_DEV, None), "test": slice(None)}
     arrays = {}
-    for split in SPLITS:
-        if split == "test":
-            x, y = z["X_test"], z["Y_test"]
-        else:
-            x, y = z["X_train"], z["Y_train"]
-            x, y = (x[: -(N_DEV + GAP)], y[: -(N_DEV + GAP)]) if split == "train" else (x[-N_DEV:], y[-N_DEV:])
-        arrays[f"{split}_obs"] = ((x[:, 1:4] + 1) / 2).astype(np.float16)
-        arrays[f"{split}_fut"] = ((y[:, :3] + 1) / 2).astype(np.float16)
+    for key, frames, name in (("X", slice(1, 4), "obs"), ("Y", slice(0, 3), "fut")):
+        for part in ("train", "test"):
+            a = z[f"{key}_{part}"]
+            for split in ("train", "dev") if part == "train" else ("test",):
+                sel = a[cut[split]]
+                outa = np.empty((len(sel), 3, *a.shape[2:]), np.float16)
+                for i in range(0, len(sel), 1024):
+                    outa[i : i + 1024] = (sel[i : i + 1024, frames] + 1) / 2
+                arrays[f"{split}_{name}"] = outa
+            del a
     np.savez(out, **arrays)
 
 
