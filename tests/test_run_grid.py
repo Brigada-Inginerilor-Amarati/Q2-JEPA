@@ -30,11 +30,16 @@ def test_run_counts(tmp_path):
     assert len(d3il) == 54 and len({j.name for j in d3il}) == 54
     with pytest.raises(SystemExit, match="reuses MovingMNIST"):
         run_grid.plan("d3il", "tune", tmp_path)
-    for bench in ("nri", "chess"):  # fast iteration: MovingMNIST's schedules, no own tuning
-        assert len(run_grid.plan(bench, "grid", tmp_path)) == 18
-        assert len(run_grid.plan(bench, "grid", tmp_path, seeds=(0,))) == 6
-        with pytest.raises(SystemExit, match="reuses MovingMNIST"):
-            run_grid.plan(bench, "tune", tmp_path)
+    assert len(run_grid.plan("nri", "grid", tmp_path)) == 18  # fast iteration: MovingMNIST's schedules
+    assert len(run_grid.plan("nri", "grid", tmp_path, seeds=(0,))) == 6
+    with pytest.raises(SystemExit, match="reuses MovingMNIST"):
+        run_grid.plan("nri", "tune", tmp_path)
+    tune = run_grid.plan("chess", "tune", tmp_path)  # chess has its own tuning (spec §4.3)
+    assert len(tune) == 9 and all("+experiment=chess" in j.overrides for j in tune)
+    with pytest.raises(SystemExit, match="chess tuning"):
+        run_grid.plan("chess", "grid", tmp_path)
+    _tuned(tmp_path, "chess", ALL_EQUAL)
+    assert len(run_grid.plan("chess", "grid", tmp_path, seeds=(0,))) == 6
 
 
 def test_best_schedule_and_priority(tmp_path):

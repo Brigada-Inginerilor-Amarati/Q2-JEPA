@@ -101,3 +101,17 @@ The seed-0 runs above are void for the new grid: move `runs/nri/grid` ViT/HQViT 
 (the launcher refuses them otherwise) and all of `runs/chess/grid` to `runs/void/chess-regression/` before rerunning:
 the launcher skips any run with `metrics.json` and would mix the two chess readouts. The particle CNN runs are
 unchanged by this fix and can stay.
+
+### 4.3 Chess tuning (2026-11-23)
+
+With the square readout, chess left the floor (seed 0, test: validity 4-5%, coverage 9-13%; ViT readout_validity
+0.52-0.55). The readout is no longer the limit; the sampled moves are. Team decision: chess gets its own
+`--stage tune` (s1-s3 per encoder on the dev split, seed 0; `TUNED_ON["chess"] = "chess"`), then the grid reruns on
+the selected schedules. s1-s3 vary only the encoder learning rate (`conf/tune/`); the predictor and prior keep
+MovingMNIST's settings. Grid runs on s1 stay valid if s1 wins (run names carry the schedule); for an encoder
+whose best schedule is s2 or s3, move its s1 grid runs to `runs/void/chess-s1/` before plotting
+(`plot_results.py` collects every finished run). Selection uses the 80 dev positions, so close schedules can differ
+by noise; the dev split is not enlarged because that would change the train slice of every run so far. The decision
+to tune chess was made on seed-0 test metrics (a benchmark-level choice, not per-encoder selection); the results
+page says so.
+

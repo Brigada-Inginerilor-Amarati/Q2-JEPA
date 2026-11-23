@@ -5,7 +5,7 @@ interrupted ones resume from their checkpoint, so after a Colab disconnect just 
 
   tune: every encoder x schedules s1-s3, seed 0, Softmax-Categorical, dev split (phase-2 spec F5).
   grid: encoders x priors x seeds (x folds for D3IL), test split, each encoder on its best tuned schedule:
-        best dev coverage (ties: lower TV) of its tune runs. D3IL, nri and chess use MovingMNIST's.
+        best dev coverage (ties: lower TV) of its tune runs. D3IL and nri use MovingMNIST's; chess has its own.
 
 python scripts/run_grid.py --bench mmnist --stage tune --jobs 3
 python scripts/run_grid.py --bench mmnist --stage grid --jobs 3
@@ -27,8 +27,9 @@ DEFAULT_ROOT = "/content/drive/MyDrive/q2jepa/runs"
 REPO = Path(__file__).resolve().parents[1]
 PRESET = {"mmnist": "+experiment=phase2", "hep18": "+experiment=hep18", "d3il": "+experiment=d3il",
           "nri": "+experiment=nri", "chess": "+experiment=chess"}  # fmt: skip
-# D3IL has no dev split (spec §5.6); charged particles and chess are fast-iteration benchmarks without their own tuning
-TUNED_ON = {"mmnist": "mmnist", "hep18": "hep18", "d3il": "mmnist", "nri": "mmnist", "chess": "mmnist"}
+# D3IL has no dev split (spec §5.6); charged particles reuse MovingMNIST's schedules. Chess got its own s1-s3 tuning
+# (2026-11-23): the only fast-iteration bench off the floor (candidate-datasets spec §4.3).
+TUNED_ON = {"mmnist": "mmnist", "hep18": "hep18", "d3il": "mmnist", "nri": "mmnist", "chess": "chess"}
 ENCODERS = ("cnn", "vit", "hqvit")
 PRIORS = ("entangled_qcbm", "softmax_categorical")  # entangled first: the priority rows (spec §9)
 SCHEDULES = ("s1", "s2", "s3")

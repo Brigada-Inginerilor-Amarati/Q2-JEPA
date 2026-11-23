@@ -1,7 +1,7 @@
 # @package _global_
 # Chess (data/chess.py), boards as 3-frame 64x64 clips, 3 equally good moves as futures. Needs
 # scripts/fetch_chess.py. python -m q2jepa.train +experiment=chess encoder=<cnn|vit|hqvit> prior=<...> seed=<0..2>
-# Fast iteration (2026-11-22): MovingMNIST's model sizes and tuned schedule, no per-benchmark tuning.
+# Fast iteration (2026-11-22): MovingMNIST's model sizes; own s1-s3 tuning since 2026-11-23 (candidate-datasets spec §4.3).
 defaults:
   - override /dataset: chess
 encoder:
