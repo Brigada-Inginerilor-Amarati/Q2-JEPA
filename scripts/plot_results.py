@@ -37,6 +37,12 @@ PLOTTED = {"mmnist": ("coverage", "validity", "tv"), "hep18": ("coverage", "vali
            "d3il": ("coverage", "tv", "acceptance"), "nri": ("coverage", "validity", "tv"),
            "chess": ("coverage", "validity", "tv"), "taxibj": ("mse_min", "mse_mean", "readout_mse")}  # fmt: skip
 
+# test-split reference lines: scripts/taxibj_baselines.py (copy last map), scripts/chess_baselines.py (random legal move)
+REFERENCES = {
+    "taxibj": ("copy last map", {"mse_mean": 0.001683}),
+    "chess": ("random legal move", {"coverage": 0.9870, "validity": 0.1309, "tv": 0.8695}),
+}
+
 
 def collect(roots: list[Path], split: str) -> list[dict]:
     """One record per finished run: dataset, encoder, prior, schedule, hqvit_train, seed, fold and its metrics."""
@@ -95,13 +101,15 @@ def table(dataset: str, groups: dict[tuple, list[dict]]) -> str:
         cells = [enc + (f" ({hq})" if hq else ""), prior, sched, platform, ", ".join(commits), str(len(rows))]
         for m in metrics:
             mean, sd = stats(rows, m)
-            cells.append(f"{mean:.3f} ± {sd:.3f}")
+            d = 5 if dataset == "taxibj" else 3  # flow errors are ~1e-3
+            cells.append(f"{mean:.{d}f} ± {sd:.{d}f}")
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 
-def figure(dataset: str, groups: dict[tuple, list[dict]]) -> plt.Figure:
+def figure(dataset: str, groups: dict[tuple, list[dict]], split: str = "test") -> plt.Figure:
     metrics = PLOTTED.get(dataset, ("coverage", "tv"))
+    ref_name, refs = REFERENCES.get(dataset, ("", {})) if split == "test" else ("", {})
     schedules = {k[2] for k in groups}
     columns = list(dict.fromkeys((k[0], k[2]) for k in groups))  # (encoder, schedule) in order
     priors = list(dict.fromkeys(k[1] for k in groups))
@@ -114,6 +122,8 @@ def figure(dataset: str, groups: dict[tuple, list[dict]]) -> plt.Figure:
             ax.bar(x, mean, width * 0.92, color=PRIOR_COLORS.get(prior, MUTED), yerr=sd, capsize=3,
                    error_kw={"ecolor": INK, "lw": 1}, label=prior)  # fmt: skip
             ax.scatter(np.full(len(rows), x), [r["metrics"][m] for r in rows], s=10, color=INK, zorder=3)
+        if m in refs:
+            ax.axhline(refs[m], color=INK, lw=1, ls="--")
         labels = [enc + (f"\n{sched}" if len(schedules) > 1 else "") for enc, sched in columns]
         ax.set_xticks(range(len(columns)), labels, fontsize=8)
         lower = m == "tv" or m.startswith(("mse", "mae", "readout_mse")) or m in ("es", "min_ade")
@@ -124,9 +134,13 @@ def figure(dataset: str, groups: dict[tuple, list[dict]]) -> plt.Figure:
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
     handles = [plt.Rectangle((0, 0), 1, 1, color=PRIOR_COLORS.get(p, MUTED)) for p in priors]
-    fig.legend(handles, priors, loc="upper center", ncol=len(priors), frameon=False, fontsize=9)
-    fig.suptitle(f"{dataset}: mean ± s.d., dots = seeds", y=0.02, fontsize=8, color=MUTED)
-    fig.tight_layout(rect=(0, 0.04, 1, 0.9))
+    names = list(priors)
+    if any(m in refs for m in metrics):
+        handles.append(plt.Line2D([], [], color=INK, lw=1, ls="--"))
+        names.append(ref_name)
+    fig.legend(handles, names, loc="upper center", ncol=len(names), frameon=False, fontsize=9)
+    fig.suptitle(f"{dataset}: mean ± s.d., dots = seeds", y=0.05, fontsize=8, color=MUTED)
+    fig.tight_layout(rect=(0, 0.06, 1, 0.9))
     return fig
 
 
@@ -144,7 +158,7 @@ def main() -> None:
         print(f"## {dataset} ({args.split})\n\n{table(dataset, groups)}\n")
         out = args.out.parent / f"{args.out.name}_{dataset}.png"
         out.parent.mkdir(parents=True, exist_ok=True)
-        figure(dataset, groups).savefig(out, dpi=130)
+        figure(dataset, groups, args.split).savefig(out, dpi=130)
         print(f"wrote {out}\n")
 
 
