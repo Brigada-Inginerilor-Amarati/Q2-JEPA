@@ -5,7 +5,7 @@
 1. **HQViT Encoder** ([Zhang et al., arXiv:2504.02730](docs/papers/hqvit.pdf)) — whole-image amplitude encoding and swap-test quantum self-attention (factored 4-qubit training mode and full 17/21-qubit swap-test benchmark mode).
 2. **Conditional Born-Machine Prior** ([Liu et al., Q-JEPA, arXiv:2610.27921](docs/papers/qjepa.pdf)) — an entangled Quantum Circuit Born Machine (QCBM) that samples binary latent action codes $z$ so a shared predictor produces diverse future representations.
 
-> **Status:** the HQViT encoder, its classical ViT twin, the QCBM priors and the classical baselines are built and trained on MovingMNIST, TaxiBJ and chess (3 seeds). HQViT trains with an exact torch simulation of its circuits and is evaluated through CUDA-Q. No quantum advantage was found; chess and charged particles are negative results. Inference on IBM hardware is not built. Numbers: [`docs/results/`](docs/results/README.md); build state: [`AGENTS.md`](AGENTS.md#2-current-state-vs-target).
+> **Status:** the HQViT encoder, its classical ViT twin, the entangled QCBM prior and the classical baselines are built and trained on MovingMNIST, TaxiBJ and chess (3 seeds). HQViT trains with an exact torch simulation of its circuits and is evaluated through CUDA-Q. No quantum advantage was found; chess and charged particles are negative results. Inference on IBM hardware is not built. Numbers: [`docs/results/`](docs/results/README.md); build state: [`AGENTS.md`](AGENTS.md#2-current-state-vs-target).
 
 ## Setup
 
@@ -86,8 +86,8 @@ Q2-JEPA/
 ├── src/q2jepa/
 │   ├── config.py             # Dataclass config schemas registered in Hydra ConfigStore
 │   ├── quantum/              # CUDA-Q kernels: swap-test attention & conditional Born machine
-│   ├── encoder/              # Visual encoders (CNN baseline; HQViT planned)
-│   ├── prior/                # Latent action priors (Softmax-Categorical, Mixture; QCBM planned)
+│   ├── encoder/              # Visual encoders (CNN baseline, ViT twin, HQViT)
+│   ├── prior/                # Latent action priors (Softmax-Categorical, Mixture, QCBM)
 │   ├── predictor.py          # Latent predictor P_psi(h, z)
 │   ├── losses.py             # Leave-one-out energy score, prior score loss, VISReg
 │   ├── data/                 # Stochastic single-digit MovingMNIST generator
