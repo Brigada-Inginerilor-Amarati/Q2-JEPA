@@ -13,7 +13,7 @@ evaluated through the CUDA-Q circuits. Compare rows only within a benchmark. Det
 | [Particles](2026-11-particles.md) | validity ↑, seed 0 only, no s.d. | 0.4 / 1.1 | mean pool 0.0 / 0.4; flatten 0.0 / 0.4 | mean pool 0.0 / 0.2; flatten not finished | |
 
 Figures: [MovingMNIST](figures/grid_mmnist.png), [TaxiBJ](figures/grid_taxibj.png), [chess](figures/grid_chess.png)
-(`scripts/plot_results.py`).
+(`scripts/plot_results.py`). CPU vs GPU timing: [attention benchmark](2026-11-attention-benchmark.md).
 
 **What the results support.**
 - Entangled-QCBM is within the seed spread of Softmax-Categorical on every benchmark with three seeds. No quantum advantage.

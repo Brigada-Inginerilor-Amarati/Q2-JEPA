@@ -14,7 +14,7 @@ ALLOWED = {
 
 def _imported_roots(path: Path) -> set[str]:
     roots = set()
-    for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
         if isinstance(node, ast.Import):
             roots |= {a.name.split(".")[0] for a in node.names}
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
