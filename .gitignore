@@ -18,3 +18,5 @@ Icon?
 
 # Colab CLI output
 notebooks/*_output.ipynb
+
+.archify/
